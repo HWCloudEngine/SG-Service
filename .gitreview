@@ -1,0 +1,6 @@
+[gerrit]
+host=202.96.135.235
+port=39418
+project=Hybrid-Cloud/sg-service
+defaultbranch=master
+defaultremote=gerrit
