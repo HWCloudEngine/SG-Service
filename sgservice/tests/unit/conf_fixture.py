@@ -18,6 +18,8 @@ CONF.import_opt('policy_file', 'sgservice.policy', group='oslo_policy')
 
 
 def set_defaults(conf):
+    conf.set_default('connection', 'sqlite://', group='database')
+    conf.set_default('sqlite_synchronous', False, group='database')
     conf.set_default('policy_file', 'sgservice.tests.unit/policy.json',
                      group='oslo_policy')
     conf.set_default('policy_dirs', [], group='oslo_policy')
