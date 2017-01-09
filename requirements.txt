@@ -27,4 +27,5 @@ Routes!=2.0,!=2.3.0,>=1.12.3;python_version!='2.7' # MIT
 six>=1.9.0 # MIT
 WebOb>=1.6.0 # MIT
 oslo.i18n>=2.1.0 # Apache-2.0
-
+SQLAlchemy<1.1.0,>=1.0.10 # MIT
+sqlalchemy-migrate>=0.9.6 # Apache-2.0

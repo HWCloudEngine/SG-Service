@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -10,17 +11,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_config import cfg
+import os
 
-CONF = cfg.CONF
+from sgservice.db.sqlalchemy import migrate_repo
 
-CONF.import_opt('policy_file', 'sgservice.policy', group='oslo_policy')
+from migrate.versioning.shell import main
 
 
-def set_defaults(conf):
-    conf.set_default('connection', 'sqlite://', group='database')
-    conf.set_default('sqlite_synchronous', False, group='database')
-    conf.set_default('policy_file', 'sgservice.tests.unit/policy.json',
-                     group='oslo_policy')
-    conf.set_default('policy_dirs', [], group='oslo_policy')
-    conf.set_default('auth_strategy', 'noauth')
+if __name__ == '__main__':
+    main(debug='False',
+         repository=os.path.abspath(os.path.dirname(migrate_repo.__file__)))

@@ -190,6 +190,10 @@ class BackupNotFound(NotFound):
     message = _("Backup %(backup_id)s could not be found.")
 
 
+class CheckpointNotFound(NotFound):
+    message = _("Checkpoint %(checkpoint_id)s could not be found.")
+
+
 class InvalidUUID(Invalid):
     message = _("Expected a uuid but received %(uuid)s.")
 
