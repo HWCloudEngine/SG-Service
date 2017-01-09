@@ -13,14 +13,21 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+
+import fixtures
+import logging
 import os
 
 from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import timeutils
 from oslotest import base
 
 from sgservice.common import config  # noqa Need to register global_opts
+from sgservice.db import migration
+from sgservice.db.sqlalchemy import api as sqla_api
 from sgservice.tests.unit import conf_fixture
+
 
 test_opts = [
 
@@ -31,9 +38,34 @@ CONF.register_opts(test_opts)
 
 LOG = log.getLogger(__name__)
 
+_DB_CACHE = None
+
+
+class Database(fixtures.Fixture):
+    def __init__(self, db_api, db_migrate, sql_connection):
+        self.sql_connection = sql_connection
+
+        # Suppress logging for test runs
+        migrate_logger = logging.getLogger('migrate')
+        migrate_logger.setLevel(logging.WARNING)
+
+        self.engine = db_api.get_engine()
+        self.engine.dispose()
+        conn = self.engine.connect()
+        db_migrate.db_sync()
+
+        self._DB = "".join(line for line in conn.connection.iterdump())
+        self.engine.dispose()
+
+    def setUp(self):
+        super(Database, self).setUp()
+
+        conn = self.engine.connect()
+        conn.connection.executescript(self._DB)
+        self.addCleanup(self.engine.dispose)
+
 
 class TestCase(base.BaseTestCase):
-
     """Test case base class for all unit tests."""
 
     def setUp(self):
@@ -42,6 +74,16 @@ class TestCase(base.BaseTestCase):
 
         conf_fixture.set_defaults(CONF)
         CONF([], default_config_files=[])
+        self.start = timeutils.utcnow()
+
+        CONF.set_default('connection', 'sqlite://', 'database')
+        CONF.set_default('sqlite_synchronous', False, 'database')
+
+        global _DB_CACHE
+        if not _DB_CACHE:
+            _DB_CACHE = Database(sqla_api, migration,
+                                 sql_connection=CONF.database.connection)
+        self.useFixture(_DB_CACHE)
 
         self.override_config('policy_file',
                              os.path.join(
