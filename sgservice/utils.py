@@ -15,9 +15,9 @@ import os
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import timeutils
 
 from sgservice import exception
-
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -44,3 +44,12 @@ def find_config(config_path):
             return os.path.abspath(path)
 
     raise exception.ConfigNotFound(path=os.path.abspath(config_path))
+
+
+def service_is_up(service):
+    """Check whether a service is up based on last heartbeat."""
+    last_heartbeat = service['updated_at'] or service['created_at']
+    # Timestamps in DB are UTC.
+    elapsed = (timeutils.utcnow(with_timezone=True) -
+               last_heartbeat).total_seconds()
+    return abs(elapsed) <= CONF.service_down_time
