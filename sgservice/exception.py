@@ -22,6 +22,7 @@ import sys
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_versionedobjects import exception as obj_exc
 import six
 import webob.exc
 from webob.util import status_generic_reasons
@@ -209,3 +210,31 @@ class InvalidInput(Invalid):
 
 class PolicyNotAuthorized(NotAuthorized):
     message = _("Policy doesn't allow %(action)s to be performed.")
+
+
+OrphanedObjectError = obj_exc.OrphanedObjectError
+ObjectActionError = obj_exc.ObjectActionError
+
+
+class InvalidVolume(Invalid):
+    message = _("Invalid volume: %(reason)s")
+
+
+class InvalidParameterValue(Invalid):
+    message = _("%(err)s")
+
+
+class EnableSGFailed(Invalid):
+    message = _("Enable SG Failed: %(reason)s")
+
+
+class DisableSGFailed(Invalid):
+    message = _("Disable SG Failed: %(reason)s")
+
+
+class InvalidSnapshot(Invalid):
+    message = _("Invalid snapshot: %(reason)s")
+
+
+class InvalidBackup(Invalid):
+    message = _("Invalid backup: %(reason)s")

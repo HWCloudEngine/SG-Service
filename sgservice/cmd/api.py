@@ -25,8 +25,8 @@ from oslo_log import log as logging
 # Need to register global_opts
 from sgservice.common import config  # noqa
 from sgservice import i18n
-
 i18n.enable_lazy()
+from sgservice import objects
 from sgservice import rpc
 from sgservice import service
 from sgservice import version
@@ -35,6 +35,7 @@ CONF = cfg.CONF
 
 
 def main():
+    objects.register_all()
     CONF(sys.argv[1:], project='sgservice',
          version=version.version_string())
     logging.setup(CONF, "sgservice")
