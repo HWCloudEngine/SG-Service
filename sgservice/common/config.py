@@ -49,6 +49,12 @@ global_opts = [
                default=60,
                help='Maximum time since last check-in for a service to be '
                     'considered up'),
+    cfg.StrOpt('controller_topic',
+               default='sgservice-controller',
+               help='The topic that controller nodes listen on'),
+    cfg.StrOpt('controller_manager',
+               default='sgservice.controller.manager.ControllerManager',
+               help='Full class name for the Manager for Controller'),
     cfg.StrOpt('host',
                default=socket.gethostname(),
                help='Name of this node.  This can be an opaque identifier. '
@@ -58,6 +64,12 @@ global_opts = [
                choices=['noauth', 'keystone'],
                help='The strategy to use for auth. Supports noauth or '
                     'keystone.'),
+    cfg.StrOpt('availability_zone',
+               default='nova',
+               help='Availability zone of this node.'),
+    cfg.StrOpt('replication_zone',
+               default='nova',
+               help='Availability zone of replication and remote backup node')
 ]
 
 CONF.register_opts(global_opts)

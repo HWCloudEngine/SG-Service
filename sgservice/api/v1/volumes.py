@@ -16,9 +16,9 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import webob
 
-
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
+from sgservice.controller.api import VolumeAPI
 from sgservice.i18n import _LI
 
 CONF = cfg.CONF
@@ -38,6 +38,12 @@ class VolumeViewBuilder(common.ViewBuilder):
         """Detailed view of a single volume."""
         volume_ref = {
             'volume': {
+                'id': volume.get('id'),
+                'status': volume.get('status'),
+                'availability_zone': volume.get('availability_zone'),
+                'replication_zone': volume.get('replication_zone'),
+                'replication_id': volume.get('replication_id'),
+                'replicate_status': volume.get('replicate_status'),
             }
         }
         return volume_ref
@@ -80,6 +86,7 @@ class VolumesController(wsgi.Controller):
     _view_builder_class = VolumeViewBuilder
 
     def __init__(self):
+        self.volume_api = VolumeAPI()
         super(VolumesController, self).__init__()
 
     def show(self, req, id):
@@ -97,15 +104,17 @@ class VolumesController(wsgi.Controller):
     def enable(self, req, id, body):
         """Enable-SG a available volume."""
         LOG.debug('Enable volume SG, volume_id: %s', id)
-        pass
-        return {"volume": {"status": "enabling"}}
+        context = req.environ['sgservice.context']
+        volume = self.volume_api.enable_sg(context, id)
+        return self._view_builder.detail(req, volume)
 
     @wsgi.action('disable')
     def disable(self, req, id, body):
         """Disable a enabled-volume."""
         LOG.info(_LI("Disable volume SG, volume_id: %s"), id)
-        pass
-        return {"volume": {"status": "disabling"}}
+        context = req.environ['sgservice.context']
+        volume = self.volume_api.disable_sg(context, id)
+        return self._view_builder.detail(req, volume)
 
     @wsgi.action('reserve')
     def reserve(self, req, id, body):

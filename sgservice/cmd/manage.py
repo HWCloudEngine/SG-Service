@@ -35,6 +35,7 @@ from sgservice import db
 from sgservice.db import migration as db_migration
 from sgservice.db.sqlalchemy import api as db_api
 from sgservice.i18n import _
+from sgservice import objects
 from sgservice import utils
 from sgservice import version
 
@@ -205,6 +206,7 @@ def fetch_func_args(func):
 
 def main():
     """Parse options and call the appropriate class/method."""
+    objects.register_all()
     CONF.register_cli_opt(category_opt)
     script_name = sys.argv[0]
     if len(sys.argv) < 2:
