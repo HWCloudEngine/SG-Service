@@ -11,17 +11,28 @@
 #    under the License.
 
 """The replications api."""
+import webob
 
 from oslo_config import cfg
 from oslo_log import log as logging
-import webob
-
+from oslo_utils import uuidutils
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
-from sgservice.i18n import _LI
+from sgservice.controller.api import API as ServiceAPI
+from sgservice import exception
+from sgservice.i18n import _, _LI
+from sgservice import utils
+
+query_replication_filters_opts = cfg.ListOpt(
+    'query_replication_filters',
+    default=['name', 'status'],
+    help='Replication filter options which non-admin user could use to query '
+         'replications.')
 
 CONF = cfg.CONF
+CONF.register_opt(query_replication_filters_opts)
+
 LOG = logging.getLogger(__name__)
 
 
@@ -38,6 +49,12 @@ class VolumeViewBuilder(common.ViewBuilder):
         """Detailed view of a single volume."""
         volume_ref = {
             'volume': {
+                'id': volume.get('id'),
+                'status': volume.get('status'),
+                'availability_zone': volume.get('availability_zone'),
+                'replication_zone': volume.get('replication_zone'),
+                'replication_id': volume.get('replication_id'),
+                'replicate_status': volume.get('replicate_status'),
             }
         }
         return volume_ref
@@ -80,32 +97,72 @@ class VolumesController(wsgi.Controller):
     _view_builder_class = VolumeViewBuilder
 
     def __init__(self):
+        self.service_api = ServiceAPI()
         super(VolumesController, self).__init__()
+
+    def _get_replication_filter_options(self):
+        return CONF.query_replication_filters
 
     def show(self, req, id):
         """Return data about the given volumes."""
         LOG.info(_LI("Show volume with id: %s"), id)
-        pass
-        return {"volume": {"status": "enabled"}}
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        return self._view_builder.detail(req, volume)
 
     def index(self, req):
         """Returns a list of volumes, transformed through view builder."""
         LOG.info(_LI("Show volume list"))
-        return {"volumes": {}}
+        context = req.environ['sgservice.context']
+        params = req.params.copy()
+        marker, limit, offset = common.get_pagination_params(params)
+        sort_keys, sort_dirs = common.get_sort_params(params)
+        filters = params
+
+        utils.remove_invaild_filter_options(
+            context, filters, self._get_replication_filter_options())
+        utils.check_filters(filters)
+
+        volumes = self.service_api.get_all(
+            context, marker=marker, limit=limit, sort_keys=sort_keys,
+            sort_dirs=sort_dirs, filters=filters, offset=offset)
+
+        retval_volumes = self._view_builder.detail_list(req, volumes)
+        LOG.info(_LI("Show volume list request issued successfully."))
+        return retval_volumes
 
     @wsgi.action('enable')
     def enable(self, req, id, body):
         """Enable-SG a available volume."""
         LOG.debug('Enable volume SG, volume_id: %s', id)
-        pass
-        return {"volume": {"status": "enabling"}}
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        params = body['enable']
+        params = {} if params is None else params
+
+        name = params.get('name', None)
+        description = params.get('description', None)
+        volume = self.service_api.enable_sg(context, id, name=name,
+                                            description=description)
+        return self._view_builder.detail(req, volume)
 
     @wsgi.action('disable')
     def disable(self, req, id, body):
         """Disable a enabled-volume."""
         LOG.info(_LI("Disable volume SG, volume_id: %s"), id)
-        pass
-        return {"volume": {"status": "disabling"}}
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        volume = self.service_api.disable_sg(context, volume)
+        return self._view_builder.detail(req, volume)
 
     @wsgi.action('reserve')
     def reserve(self, req, id, body):
@@ -124,7 +181,6 @@ class VolumesController(wsgi.Controller):
     @wsgi.action('initialize_connection')
     def initialize_connection(self, req, id, body):
         """Initialize volume attachment."""
-        pass
         driver_volume_type = "iscsi"
         target_portal = "162.3.117.150:3260"
         target_iqn = "iqn.2016-10.huawei.sg.volume-%s" % id

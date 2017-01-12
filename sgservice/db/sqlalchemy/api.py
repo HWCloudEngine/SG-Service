@@ -480,7 +480,8 @@ def _volume_get_query(context, columns_to_join=[], session=None,
             options(joinedload('replication'))
 
     return model_query(context, models.Volume, session=session,
-                       project_only=project_only). \
+                       project_only=project_only,
+                       read_deleted=read_deleted). \
         options(joinedload('volume_attachment'))
 
 
@@ -521,12 +522,26 @@ def volume_create(context, values):
     return _volume_get(context, values['id'], session=session)
 
 
+@require_context
+def volume_renable(context, volume_id, values):
+    session = get_session()
+    values['deleted'] = False
+    values['deleted_at'] = None
+    with session.begin():
+        volume_ref = _volume_get(context, volume_id, session=session,
+                                 read_deleted='yes')
+        volume_ref.update(values)
+        volume_ref.save(session)
+    return volume_ref
+
+
 @handle_db_data_error
 @require_context
 def volume_update(context, volume_id, values):
     session = get_session()
     with session.begin():
-        volume_ref = _volume_get(context, volume_id, session=session)
+        volume_ref = _volume_get(context, volume_id, session=session,
+                                 read_deleted='yes')
         volume_ref.update(values)
         volume_ref.save(session)
     return volume_ref
