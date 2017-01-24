@@ -21,6 +21,7 @@ from oslo_service import loopingcall
 
 from sgservice.controller.client_factory import ClientFactory
 from sgservice import exception
+from sgservice.grpc.client import ControlClient
 from sgservice.i18n import _, _LE, _LI
 from sgservice import manager
 from sgservice import objects
@@ -42,7 +43,10 @@ sg_client_opts = [
     cfg.StrOpt('sg_client_host',
                help='The host of sg.'),
     cfg.StrOpt('sg_client_port',
-               help='The gprc port of sg')
+               help='The gprc port of sg'),
+    cfg.StrOpt('sg_target_prefix',
+               default='iqn.2017-01.huawei.sg:',
+               help='Target prefix for sg volumes')
 ]
 
 LOG = logging.getLogger(__name__)
@@ -62,6 +66,8 @@ class ControllerManager(manager.Manager):
     def __init__(self, service_name=None, *args, **kwargs):
         super(ControllerManager, self).__init__(*args, **kwargs)
         self.sync_status_interval = CONF.sync_status_interval
+        self.sg_ctrl = ControlClient(CONF.sg_client.sg_client_host,
+                                     CONF.sg_client.sg_client_port)
 
         self.enable_volumes = {}
         sync_enable_volume_loop = loopingcall.FixedIntervalLoopingCall(
@@ -83,6 +89,8 @@ class ControllerManager(manager.Manager):
         for volume_id, volume_info in self.enable_volumes.items():
             cinder_client = volume_info['cinder_client']
             sg_volume = volume_info['sg_volume']
+            device = volume_info['device']
+            nova_client = volume_info['nova_client']
             try:
                 cinder_volume = cinder_client.volumes.get(volume_id)
             except Exception:
@@ -92,21 +100,36 @@ class ControllerManager(manager.Manager):
                 self.enable_volumes.pop(volume_id)
 
             if cinder_volume.status == 'in-use':
-                LOG.info(_("Enable cinder volume '%s' SG succeed."),
+                LOG.info(_("Attach cinder volume '%s' SG succeed."),
                          volume_id)
-                sg_volume.update({'status': fields.VolumeStatus.ENABLED})
-                sg_volume.save()
+
+                response = self.sg_ctrl.volumes.enable_sg(
+                    volume_id, device, cinder_volume.size,
+                    self._generate_target_iqn(volume_id))
+                if response['status'] != 0:
+                    msg = _("Call enable-sg to sg-client failed.")
+                    LOG.error(msg)
+                    nova_client.volumes.delete_server_volume(
+                        CONF.sg_client.sg_client_instance, volume_id)
+                    sg_volume.destroy()
+                else:
+                    msg = _("Call enable-sg to sg-client succeed.")
+                    LOG.info(msg)
+                    sg_volume.update({'status': fields.VolumeStatus.ENABLED})
+                    sg_volume.save()
+                self.enable_volumes.pop(volume_id)
             elif cinder_volume.status == 'attaching':
                 continue
             else:
                 LOG.info(_("Enable cinder volume '%s' SG failed."),
                          volume_id)
                 sg_volume.destroy()
-            self.enable_volumes.pop(volume_id)
+                self.enable_volumes.pop(volume_id)
 
     def _sync_disable_volume(self):
         for volume_id, volume_info in self.disable_volumes.items():
             cinder_client = volume_info['cinder_client']
+            nova_client = volume_info['nova_client']
             sg_volume = volume_info['sg_volume']
             try:
                 cinder_volume = cinder_client.volumes.get(volume_id)
@@ -118,21 +141,37 @@ class ControllerManager(manager.Manager):
                 self.disable_volumes.pop(volume_id)
 
             if cinder_volume.status == 'available':
-                LOG.info(_("Disable cinder volume '%s' SG succeed."),
+                LOG.info(_("Detach cinder volume '%s' from SG succeed."),
                          volume_id)
-                sg_volume.destroy()
+
+                response = self.sg_ctrl.volumes.disable_sg(
+                    volume_id, self._generate_target_iqn(volume_id))
+                if response['status'] != 0:
+                    msg = _("Call disable-sg to sg-client failed.")
+                    LOG.error(msg)
+                    nova_client.volumes.create_server_volume(
+                        CONF.sg_client.sg_client_instance, volume_id)
+                    sg_volume.update({'status': fields.VolumeStatus.ENABLED})
+                    sg_volume.save()
+                else:
+                    msg = _("Call disable-sg to sg-client succeed.")
+                    LOG.error(msg)
+                    sg_volume.destroy()
+                self.enable_volumes.pop(volume_id)
             elif cinder_volume.status == 'detaching':
                 continue
             else:
                 LOG.info(_("Disable cinder volume '%s' SG failed."),
                          volume_id)
                 if cinder_volume.status == 'in-use':
-                    # TODO(luobin): grpc-call enable_sg in sg_client
                     sg_volume.update({'status': fields.VolumeStatus.ENABLED})
                 else:
                     sg_volume.update({'status': fields.VolumeStatus.ERROR})
                 sg_volume.save()
-            self.disable_volumes.pop(volume_id)
+                self.disable_volumes.pop(volume_id)
+
+    def _generate_target_iqn(self, volume_id):
+        return "%s%s" % (CONF.sg_client.sg_target_prefix, volume_id)
 
     def enable_sg(self, context, volume_id):
         LOG.info(_LI("Enable-SG for this volume with id %s"), volume_id)
@@ -143,16 +182,18 @@ class ControllerManager(manager.Manager):
 
         nova_client = ClientFactory.create_client('nova', context)
         cinder_client = ClientFactory.create_client('cinder', context)
+
         try:
             volume_attachment = nova_client.volumes.create_server_volume(
                 CONF.sg_client.sg_client_instance, volume_id)
         except Exception as err:
-            LOG.error(_LE(err))
+            LOG.error(err)
             raise exception.EnableSGFailed(reason=err)
 
         self.enable_volumes[volume_id] = {
             'device': volume_attachment.device,
             'cinder_client': cinder_client,
+            'nova_client': nova_client,
             'sg_volume': volume
         }
 
@@ -184,17 +225,17 @@ class ControllerManager(manager.Manager):
                     raise exception.InvalidBackup(reason=msg)
                 self.delete_backup(context, b)
 
-        # TODO(luobin): grpc-call disable_sg in sg_client
         nova_client = ClientFactory.create_client('nova', context)
         cinder_client = ClientFactory.create_client('cinder', context)
         try:
             nova_client.volumes.delete_server_volume(
                 CONF.sg_client.sg_client_instance, volume_id)
         except Exception as err:
-            LOG.error(_LE(err))
+            LOG.error(err)
             raise exception.EnableSGFailed(reason=err)
 
         self.disable_volumes[volume_id] = {
             'cinder_client': cinder_client,
-            'sg_volume': volume
+            'sg_volume': volume,
+            'nova_client': nova_client,
         }

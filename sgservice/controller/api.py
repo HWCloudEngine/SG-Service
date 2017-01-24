@@ -14,7 +14,6 @@
 
 import six
 
-from cinderclient.exceptions import NotFound
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -58,7 +57,6 @@ class API(base.Base):
             pass
 
         cinder_client = ClientFactory.create_client("cinder", context)
-
         try:
             cinder_volume = cinder_client.volumes.get(volume_id)
         except Exception:
@@ -89,15 +87,11 @@ class API(base.Base):
         }
 
         try:
-            volume = objects.Volume.get_by_id(context, id=volume_id,
-                                              read_deleted='yes')
-        except Exception:
-            volume = None
-
-        if volume is not None:
+            objects.Volume.get_by_id(context, id=volume_id,
+                                     read_deleted='only')
             volume = objects.Volume.renable(context, volume_id,
-                                           volume_properties)
-        else:
+                                            volume_properties)
+        except Exception:
             volume_properties['id'] = volume_id
             volume = objects.Volume(context=context, **volume_properties)
             volume.create()
@@ -124,9 +118,15 @@ class API(base.Base):
         snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
         backups = objects.BackupList.get_all_by_volume(context, volume.id)
 
-        if cascade is False and len(snapshots) + len(backups) != 0:
-            msg = _('Unable disable-sg this volume with snapshot or backup.')
-            raise exception.InvalidVolume(reason=msg)
+        if cascade is False:
+            if len(backups) + len(snapshots) != 0:
+                msg = _(
+                    'Unable disable-sg this volume with snapshot or backup.')
+                raise exception.InvalidVolume(reason=msg)
+            if volume.replicate_status is not None:
+                msg = _(
+                    'Unable disable-sg this volume with replicate.')
+                raise exception.InvalidVolume(reason=msg)
 
         excepted = {'status': ('available', 'error', 'deleting')}
         values = {'status': 'deleting'}
@@ -140,7 +140,7 @@ class API(base.Base):
                     msg = _('Failed to update snapshot.')
                     raise exception.InvalidVolume(reason=msg)
             for b in backups:
-                b.conditional_update(values, excepted)
+                result = b.conditional_update(values, excepted)
                 if not result:
                     volume.update({'status': fields.VolumeStatus.ERROR})
                     volume.save()
