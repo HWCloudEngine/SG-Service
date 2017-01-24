@@ -238,3 +238,7 @@ class InvalidSnapshot(Invalid):
 
 class InvalidBackup(Invalid):
     message = _("Invalid backup: %(reason)s")
+
+
+class SGDriverError(SGServiceException):
+    message = _("SG Driver Error: %(reason)s")

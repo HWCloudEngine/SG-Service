@@ -204,16 +204,7 @@ class Backup(BASE, SGServiceBase):
     type = Column(String(36))
     destination = Column(String(36))
     availability_zone = Column(String(255))
-    volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
-
-    volume = orm.relationship(
-        Volume,
-        backref='backups',
-        foreign_keys=volume_id,
-        primaryjoin='and_('
-                    'Backup.volume_id == Volume.id,'
-                    'Backup.deleted == 0,'
-                    'Volume.deleted == 0)')
+    volume_id = Column(String(36), nullable=False)
 
     @property
     def name(self):
