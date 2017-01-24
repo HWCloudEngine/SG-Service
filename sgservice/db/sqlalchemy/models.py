@@ -126,6 +126,7 @@ class Volume(BASE, SGServiceBase):
     previous_status = Column(String(64))
     display_name = Column(String(255))
     display_description = Column(String(255))
+    size = Column(Integer)
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
     replication_id = Column(String(36), ForeignKey("replications.id"),
@@ -204,16 +205,7 @@ class Backup(BASE, SGServiceBase):
     type = Column(String(36))
     destination = Column(String(36))
     availability_zone = Column(String(255))
-    volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
-
-    volume = orm.relationship(
-        Volume,
-        backref='backups',
-        foreign_keys=volume_id,
-        primaryjoin='and_('
-                    'Backup.volume_id == Volume.id,'
-                    'Backup.deleted == 0,'
-                    'Volume.deleted == 0)')
+    volume_id = Column(String(36), nullable=False)
 
     @property
     def name(self):

@@ -88,6 +88,7 @@ def define_tables(meta):
         Column('previous_status', String(64)),
         Column('display_name', String(255)),
         Column('display_description', String(255)),
+        Column('size', Integer),
         Column('availability_zone', String(255)),
         Column('replication_zone', String(255)),
         Column('replication_id', String(36), ForeignKey('replications.id'),
@@ -139,8 +140,7 @@ def define_tables(meta):
         Column('type', String(64)),
         Column('destination', String(64)),
         Column('availability_zone', String(255)),
-        Column('volume_id', String(36), ForeignKey('volumes.id'),
-               nullable=False),
+        Column('volume_id', String(36), nullable=False),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )

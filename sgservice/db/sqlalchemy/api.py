@@ -523,7 +523,7 @@ def volume_create(context, values):
 
 
 @require_context
-def volume_renable(context, volume_id, values):
+def volume_reenable(context, volume_id, values):
     session = get_session()
     values['deleted'] = False
     values['deleted_at'] = None

@@ -30,7 +30,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
     # Version 1.0: Initial version
     VERSION = '1.0'
 
-    OPTIONAL_FIELDS = ['replication', 'volume_attachment']
+    OPTIONAL_FIELDS = ['volume_attachment']
 
     fields = {
         'id': fields.UUIDField(),
@@ -41,6 +41,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'previous_status': fields.StringField(nullable=True),
         'display_name': fields.StringField(nullable=True),
         'display_description': fields.StringField(nullable=True),
+        'size': fields.IntegerField(nullable=True),
         'availability_zone': fields.StringField(nullable=True),
         'replication_zone': fields.StringField(nullable=True),
         'replication_id': fields.UUIDField(nullable=True),
@@ -48,7 +49,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'replicate_mode': fields.StringField(nullable=True),
         'access_mode': fields.StringField(nullable=True),
 
-        'replication': fields.ObjectField('Replication', nullable=True),
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
                                                 nullable=True),
     }
@@ -82,14 +82,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
                     objects.VolumeAttachment,
                     db_volume.get('volume_attachment'))
                 volume.volume_attachment = attachments
-        if 'replication' in expected_attrs:
-            if db_volume.get('replication', None) is None:
-                db_volume.replication = None
-            else:
-                replication = objects.Replication(context)
-                replication._from_db_object(context, replication,
-                                            db_volume['replication'])
-                volume.replication = replication
 
         volume._context = context
         volume.obj_reset_changes()
@@ -102,10 +94,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         #                                       reason=_('already created'))
         updates = self.sgservice_obj_get_changes()
 
-        if 'replication' in updates:
-            raise exception.ObjectActionError(
-                action='create', reason=_('replication assigned'))
-
         db_volume = db.volume_create(self._context, updates)
         self._from_db_object(self._context, self, db_volume)
 
@@ -113,9 +101,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
     def save(self):
         updates = self.sgservice_obj_get_changes()
         if updates:
-            if 'replication' in updates:
-                raise exception.ObjectActionError(
-                    action='save', reason=_('replication changed'))
             db.volume_update(self._context, self.id, updates)
         self.obj_reset_changes()
 
@@ -127,8 +112,8 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
             self.obj_reset_changes(updated_values.keys())
 
     @base.remotable_classmethod
-    def renable(cls, context, volume_id, values):
-        orm_obj = db.volume_renable(context, volume_id, values)
+    def reenable(cls, context, volume_id, values):
+        orm_obj = db.volume_reenable(context, volume_id, values)
         return cls._from_db_object(context, cls(context), orm_obj)
 
     def obj_load_attr(self, attrname):
@@ -140,9 +125,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
             raise exception.OrphanedObjectError(method='obj_load_attr',
                                                 objtype=self.obj_name())
 
-        if attrname == 'replication':
-            self.replication = db.replication_get(self._context,
-                                                  self.replication_id)
         elif attrname == 'volume_attachment':
             attachments = objects.VolumeAttachmentList.get_all_by_volume_id(
                 self._context, self.id)
