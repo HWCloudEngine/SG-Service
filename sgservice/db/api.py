@@ -399,7 +399,7 @@ def volume_create(context, values):
     return IMPL.volume_create(context, values)
 
 
-def volume_renable(context, id, values):
+def volume_reenable(context, id, values):
     """Re-enable a volume and set the given properties update it .
 
     :param context: The security context
@@ -411,7 +411,7 @@ def volume_renable(context, id, values):
 
     Raises VolumeNotFound if volume with the given ID doesn't exist.
     """
-    return IMPL.volume_renable(context, id, values)
+    return IMPL.volume_reenable(context, id, values)
 
 
 def volume_update(context, id, values):

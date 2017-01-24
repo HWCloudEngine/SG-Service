@@ -127,8 +127,8 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
             self.obj_reset_changes(updated_values.keys())
 
     @base.remotable_classmethod
-    def renable(cls, context, volume_id, values):
-        orm_obj = db.volume_renable(context, volume_id, values)
+    def reenable(cls, context, volume_id, values):
+        orm_obj = db.volume_reenable(context, volume_id, values)
         return cls._from_db_object(context, cls(context), orm_obj)
 
     def obj_load_attr(self, attrname):
