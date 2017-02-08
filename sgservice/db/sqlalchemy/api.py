@@ -1147,6 +1147,23 @@ def volume_detached(context, volume_id, attachment_id):
             volume_ref['attach_status'] = 'attached'
             volume_ref.save(session=session)
 
+@handle_db_data_error
+@require_context
+def attachment_destroy(context, attachment_id):
+    """Destroy the specified attachment record."""
+    utcnow = timeutils.utcnow()
+    session = get_session()
+    with session.begin():
+        updated_values = {'attach_status': 'deleted',
+                          'deleted': True,
+                          'deleted_at': utcnow,
+                          'updated_at': literal_column('updated_at')}
+        volume_attachment_ref = volume_attachment_get(context, attachment_id,
+                                                      session=session)
+        volume_attachment_ref.update(updated_values)
+    del updated_values['updated_at']
+    return updated_values
+
 
 ###################
 
