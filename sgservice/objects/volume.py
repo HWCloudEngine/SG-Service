@@ -48,7 +48,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'replicate_mode': fields.StringField(nullable=True),
         'access_mode': fields.StringField(nullable=True),
 
-        'replication': fields.ObjectField('Replication', nullable=True),
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
                                                 nullable=True),
     }
@@ -82,14 +81,6 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
                     objects.VolumeAttachment,
                     db_volume.get('volume_attachment'))
                 volume.volume_attachment = attachments
-        if 'replication' in expected_attrs:
-            if db_volume.get('replication', None) is None:
-                db_volume.replication = None
-            else:
-                replication = objects.Replication(context)
-                replication._from_db_object(context, replication,
-                                            db_volume['replication'])
-                volume.replication = replication
 
         volume._context = context
         volume.obj_reset_changes()

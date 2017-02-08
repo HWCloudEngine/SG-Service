@@ -13,6 +13,7 @@
 """Utilities and helper functions."""
 import ast
 import os
+import re
 import six
 
 from oslo_config import cfg
@@ -94,3 +95,19 @@ def get_bool_params(param_string, params):
         }
         raise exception.InvalidParameterValue(msg)
     return strutils.bool_from_string(param, strict=True)
+
+
+def sanitize_hostname(hostname):
+    """Return a hostname which conforms to RFC-952 and RFC-1123 specs."""
+    if six.PY3:
+        hostname = hostname.encode('latin-1', 'ignore')
+        hostname = hostname.decode('latin-1')
+    else:
+        if isinstance(hostname, six.text_type):
+            hostname = hostname.encode('latin-1', 'ignore')
+
+    hostname = re.sub('[ _]', '-', hostname)
+    hostname = re.sub('[^\w.-]+', '', hostname)
+    hostname = hostname.lower()
+    hostname = hostname.strip('.-')
+    return hostname

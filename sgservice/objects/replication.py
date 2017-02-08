@@ -49,8 +49,8 @@ class Replication(base.SGServicePersistentObject, base.SGServiceObject,
     def name(self):
         return CONF.replication_name_template % self.id
 
-    @staticmethod
-    def _from_db_object(context, replication, db_replication):
+    @classmethod
+    def _from_db_object(cls, context, replication, db_replication):
         for name, field in replication.fields.items():
             value = db_replication.get(name)
             if isinstance(field, fields.IntegerField):

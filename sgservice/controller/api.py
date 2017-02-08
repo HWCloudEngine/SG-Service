@@ -177,3 +177,72 @@ class API(base.Base):
 
         LOG.info(_LI("Get all volumes completed successfully."))
         return volumes
+
+    def reserve_volume(self, context, volume):
+        if volume.status != fields.VolumeStatus.ENABLED:
+            msg = (_('Volume %(vol_id)s to be reserved status must be'
+                     'enabled, but current status is %(status)s.')
+                   % {'vol_id': volume.id,
+                      'status': volume.status})
+            raise exception.InvalidVolume(reason=msg)
+        volume.update({'status': 'attaching'})
+        volume.save()
+        LOG.info(_LI("Reserve volume completed successfully."))
+
+    def unreserve_volume(self, context, volume):
+        expected = {'status': 'attaching'}
+        value = {'status': 'enabled'}
+        result = volume.conditional_update(value, expected)
+        if not result:
+            msg = (_('Unable to unreserve volume. Volume %(vol_id)s to be '
+                     'unreserved status must be attaching, but current '
+                     'status is %(status)s.')
+                   % {'vol_id': volume.id,
+                      'status': volume.status})
+            raise exception.InvalidVolume(reason=msg)
+        LOG.info(_LI("Unreserve volume completed successfully."))
+
+    def begin_detaching(self, context, volume):
+        expected = {'status': 'in-use'}
+        value = {'status': 'detaching'}
+        result = volume.conditional_update(value, expected)
+
+        if not result:
+            msg = (_('Unable to detach volume. Volume %(vol_id)s to be '
+                     'unreserved  status  must be in-use, but current '
+                     'status is %(status)s.')
+                   % {'vol_id': volume.id,
+                      'status': volume.status})
+            raise exception.InvalidVolume(reason=msg)
+        LOG.info(_LI("Begin detaching volume completed successfully."))
+
+    def roll_detaching(self, context, volume):
+        expected = {'status': 'detaching'}
+        value = {'status': 'in-use'}
+        volume.conditional_update(value, expected)
+        LOG.info(_LI("Roll detaching of volume completed successfully."))
+
+    def attach(self, context, volume, instance_uuid, host_name, mountpoint,
+               mode):
+        attach_results = self.controller_rpcapi.attach_volume(context,
+                                                              volume,
+                                                              instance_uuid,
+                                                              host_name,
+                                                              mountpoint,
+                                                              mode)
+        LOG.info(_LI("Attach volume completed successfully."))
+        return attach_results
+
+    def detach(self, context, volume, attachment_id):
+        detach_results = self.controller_rpcapi.detach_volume(context,
+                                                              volume,
+                                                              attachment_id)
+        LOG.info(_LI("Detach volume completed successfully."))
+        return detach_results
+
+    def initialize_connection(self, context, volume, connector):
+        init_results = self.controller_rpcapi.initialize_connection(context,
+                                                                    volume,
+                                                                    connector)
+        LOG.info(_LI("Initialize volume connection completed successfully."))
+        return init_results

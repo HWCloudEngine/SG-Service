@@ -83,8 +83,30 @@ class SGDriver(object):
             raise exception.SGDriverError(reason=msg)
         return response['volumes']
 
-    def initialize_connection(self, volume_id):
+    def attach_volume(self, context, volume, instance_uuid,
+                      host_name_sanitized, mountpoint, mode):
         pass
+
+    def detach_volume(self, context, volume, attachment):
+        pass
+
+    def initialize_connection(self, context, volume, connector=None):
+        # iscsi mode
+        driver_volume_type = "iscsi"
+        target_portal = "%s:3260" % CONF.sg_client.sg_client_host
+        target_iqn = self._generate_target_iqn(volume.id)
+        target_lun = 1
+        data = {
+            "target_discovered": False,
+            "target_portal": target_portal,
+            "target_iqn": target_iqn,
+            "target_lun": target_lun,
+            "volume_id": volume.id,
+            "display_name": volume.display_name,
+        }
+        connection_info = {'driver_volume_type': driver_volume_type,
+                           'data': data}
+        return connection_info
 
     def create_backup(self, **kwargs):
         pass
