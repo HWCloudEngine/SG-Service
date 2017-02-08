@@ -168,42 +168,79 @@ class VolumesController(wsgi.Controller):
     def reserve(self, req, id, body):
         """Mark SG-volume as reserved before attach."""
         LOG.info(_LI("Mark SG-volume as reserved, volume_id: %s"), id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        self.service_api.reserve_volume(context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('unreserve')
     def unreserve(self, req, id, body):
         """Unmark volume as reserved."""
         LOG.info(_LI("Unmark volume as reserved, volume_id: %s"), id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        self.service_api.unreserve_volume(context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('initialize_connection')
     def initialize_connection(self, req, id, body):
         """Initialize volume attachment."""
-        driver_volume_type = "iscsi"
-        target_portal = "162.3.117.150:3260"
-        target_iqn = "iqn.2016-10.huawei.sg.volume-%s" % id
-        target_lun = 1
-        data = {
-            "target_discovered": False,
-            "target_portal": target_portal,
-            "target_iqn": target_iqn,
-            "target_lun": target_lun,
-            "volume_id": id,
-            "display_name": id
-        }
-        connection_info = {
-            "driver_volume_type": driver_volume_type,
-            "data": data
-        }
-        return {"connection_info": connection_info}
+        LOG.info(_LI("Initialize volume attachment, volume_id: %s"), id)
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+
+        params = body['initialize_connection']
+        params = {} if params is None else params
+        connector = params.get('connector', None)
+
+        info = self.service_api.initialize_connection(
+            context, volume, connector)
+        return {"connection_info": info}
 
     @wsgi.action('attach')
     def attach(self, req, id, body):
         """Add sg-volume attachment metadata."""
         LOG.info(_LI("Add SG-volume attachment, volume_id: %s"), id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+
+        params = body['attach']
+        params = {} if params is None else params
+        instance_uuid = params.get('instance_uuid', None)
+        host_name = params.get('host_name', None)
+        mountpoint = params.get('mountpoint', None)
+        mode = params.get('mode', 'rw')
+
+        if instance_uuid is None and host_name is None:
+            msg = _("Invalid request to attach volume to an invalid target")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if mode not in ('rw', 'ro'):
+            msg = _("Invalid request to attach volume to an invalid mode. "
+                    "Attaching mode should be 'rw' or 'ro'.")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+
+        self.service_api.attach(context, volume, instance_uuid, host_name,
+                                mountpoint, mode)
         return webob.Response(status_int=202)
 
     @wsgi.action('begin_detaching')
@@ -211,7 +248,14 @@ class VolumesController(wsgi.Controller):
         """Update volume status to 'detaching'."""
         LOG.info(_LI("Update volume status to detaching, volume_id: %s"),
                  id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        self.service_api.begin_detaching(context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('roll_detaching')
@@ -219,7 +263,14 @@ class VolumesController(wsgi.Controller):
         """Roll back volume status to 'in-use'."""
         LOG.info(_LI("Roll back volume status to in-use, volume_id: %s"),
                  id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        self.service_api.roll_detaching(context, volume)
         return webob.Response(status_int=202)
 
     @wsgi.action('detach')
@@ -227,7 +278,17 @@ class VolumesController(wsgi.Controller):
         """Clear attachment metadata."""
         LOG.info(_LI("Clear SG-volume attachment with volume_id: %s"),
                  id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        params = body['detach']
+        params = {} if params is None else params
+        attachment_id = params.get('attachment_id', None)
+        self.service_api.detach(context, volume, attachment_id)
         return webob.Response(status_int=202)
 
 

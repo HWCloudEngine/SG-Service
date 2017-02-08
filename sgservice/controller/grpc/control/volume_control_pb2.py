@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='control_api/volume_control.proto',
   package='huawei.proto.control',
   syntax='proto3',
-  serialized_pb=_b('\n control_api/volume_control.proto\x12\x14huawei.proto.control\x1a\x0c\x63ommon.proto\"\x10\n\x0eListDevicesReq\"K\n\x0eListDevicesRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12\x0f\n\x07\x64\x65vices\x18\x02 \x03(\t\"R\n\x0b\x45nableSGReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0e\n\x06\x64\x65vice\x18\x03 \x01(\t\x12\x12\n\ntarget_iqn\x18\x04 \x01(\t\"7\n\x0b\x45nableSGRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\"5\n\x0c\x44isableSGReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\x12\x12\n\ntarget_iqn\x18\x02 \x01(\t\"8\n\x0c\x44isableSGRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\"!\n\x0cGetVolumeReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\"b\n\x0cGetVolumeRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12(\n\x06volume\x18\x02 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\"\x10\n\x0eListVolumesReq\"e\n\x0eListVolumesRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12)\n\x07volumes\x18\x02 \x03(\x0b\x32\x18.huawei.proto.VolumeInfo2\xcb\x03\n\rVolumeControl\x12[\n\x0bListDevices\x12$.huawei.proto.control.ListDevicesReq\x1a$.huawei.proto.control.ListDevicesRes\"\x00\x12R\n\x08\x45nableSG\x12!.huawei.proto.control.EnableSGReq\x1a!.huawei.proto.control.EnableSGRes\"\x00\x12U\n\tDisableSG\x12\".huawei.proto.control.DisableSGReq\x1a\".huawei.proto.control.DisableSGRes\"\x00\x12U\n\tGetVolume\x12\".huawei.proto.control.GetVolumeReq\x1a\".huawei.proto.control.GetVolumeRes\"\x00\x12[\n\x0bListVolumes\x12$.huawei.proto.control.ListVolumesReq\x1a$.huawei.proto.control.ListVolumesRes\"\x00\x62\x06proto3')
+  serialized_pb=_b('\n control_api/volume_control.proto\x12\x14huawei.proto.control\x1a\x0c\x63ommon.proto\"\x10\n\x0eListDevicesReq\"K\n\x0eListDevicesRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12\x0f\n\x07\x64\x65vices\x18\x02 \x03(\t\">\n\x0b\x45nableSGReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\x12\x0c\n\x04size\x18\x02 \x01(\x04\x12\x0e\n\x06\x64\x65vice\x18\x03 \x01(\t\"\xb2\x01\n\x0b\x45nableSGRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12\x46\n\x0b\x64river_data\x18\x02 \x03(\x0b\x32\x31.huawei.proto.control.EnableSGRes.DriverDataEntry\x1a\x31\n\x0f\x44riverDataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"!\n\x0c\x44isableSGReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\"8\n\x0c\x44isableSGRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\"!\n\x0cGetVolumeReq\x12\x11\n\tvolume_id\x18\x01 \x01(\t\"b\n\x0cGetVolumeRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12(\n\x06volume\x18\x02 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\"\x10\n\x0eListVolumesReq\"e\n\x0eListVolumesRes\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.huawei.proto.StatusCode\x12)\n\x07volumes\x18\x02 \x03(\x0b\x32\x18.huawei.proto.VolumeInfo2\xcb\x03\n\rVolumeControl\x12[\n\x0bListDevices\x12$.huawei.proto.control.ListDevicesReq\x1a$.huawei.proto.control.ListDevicesRes\"\x00\x12R\n\x08\x45nableSG\x12!.huawei.proto.control.EnableSGReq\x1a!.huawei.proto.control.EnableSGRes\"\x00\x12U\n\tDisableSG\x12\".huawei.proto.control.DisableSGReq\x1a\".huawei.proto.control.DisableSGRes\"\x00\x12U\n\tGetVolume\x12\".huawei.proto.control.GetVolumeReq\x1a\".huawei.proto.control.GetVolumeRes\"\x00\x12[\n\x0bListVolumes\x12$.huawei.proto.control.ListVolumesReq\x1a$.huawei.proto.control.ListVolumesRes\"\x00\x62\x06proto3')
   ,
   dependencies=[common__pb2.DESCRIPTOR,])
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
@@ -118,13 +118,6 @@ _ENABLESGREQ = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
-    _descriptor.FieldDescriptor(
-      name='target_iqn', full_name='huawei.proto.control.EnableSGReq.target_iqn', index=3,
-      number=4, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
   ],
   extensions=[
   ],
@@ -138,9 +131,46 @@ _ENABLESGREQ = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=167,
-  serialized_end=249,
+  serialized_end=229,
 )
 
+
+_ENABLESGRES_DRIVERDATAENTRY = _descriptor.Descriptor(
+  name='DriverDataEntry',
+  full_name='huawei.proto.control.EnableSGRes.DriverDataEntry',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='key', full_name='huawei.proto.control.EnableSGRes.DriverDataEntry.key', index=0,
+      number=1, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    _descriptor.FieldDescriptor(
+      name='value', full_name='huawei.proto.control.EnableSGRes.DriverDataEntry.value', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=_b("").decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=_descriptor._ParseOptions(descriptor_pb2.MessageOptions(), _b('8\001')),
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=361,
+  serialized_end=410,
+)
 
 _ENABLESGRES = _descriptor.Descriptor(
   name='EnableSGRes',
@@ -156,10 +186,17 @@ _ENABLESGRES = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    _descriptor.FieldDescriptor(
+      name='driver_data', full_name='huawei.proto.control.EnableSGRes.driver_data', index=1,
+      number=2, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
-  nested_types=[],
+  nested_types=[_ENABLESGRES_DRIVERDATAENTRY, ],
   enum_types=[
   ],
   options=None,
@@ -168,8 +205,8 @@ _ENABLESGRES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=251,
-  serialized_end=306,
+  serialized_start=232,
+  serialized_end=410,
 )
 
 
@@ -187,13 +224,6 @@ _DISABLESGREQ = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
-    _descriptor.FieldDescriptor(
-      name='target_iqn', full_name='huawei.proto.control.DisableSGReq.target_iqn', index=1,
-      number=2, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
   ],
   extensions=[
   ],
@@ -206,8 +236,8 @@ _DISABLESGREQ = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=308,
-  serialized_end=361,
+  serialized_start=412,
+  serialized_end=445,
 )
 
 
@@ -237,8 +267,8 @@ _DISABLESGRES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=363,
-  serialized_end=419,
+  serialized_start=447,
+  serialized_end=503,
 )
 
 
@@ -268,8 +298,8 @@ _GETVOLUMEREQ = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=421,
-  serialized_end=454,
+  serialized_start=505,
+  serialized_end=538,
 )
 
 
@@ -306,8 +336,8 @@ _GETVOLUMERES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=456,
-  serialized_end=554,
+  serialized_start=540,
+  serialized_end=638,
 )
 
 
@@ -330,8 +360,8 @@ _LISTVOLUMESREQ = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=556,
-  serialized_end=572,
+  serialized_start=640,
+  serialized_end=656,
 )
 
 
@@ -368,12 +398,14 @@ _LISTVOLUMESRES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=574,
-  serialized_end=675,
+  serialized_start=658,
+  serialized_end=759,
 )
 
 _LISTDEVICESRES.fields_by_name['status'].enum_type = common__pb2._STATUSCODE
+_ENABLESGRES_DRIVERDATAENTRY.containing_type = _ENABLESGRES
 _ENABLESGRES.fields_by_name['status'].enum_type = common__pb2._STATUSCODE
+_ENABLESGRES.fields_by_name['driver_data'].message_type = _ENABLESGRES_DRIVERDATAENTRY
 _DISABLESGRES.fields_by_name['status'].enum_type = common__pb2._STATUSCODE
 _GETVOLUMERES.fields_by_name['status'].enum_type = common__pb2._STATUSCODE
 _GETVOLUMERES.fields_by_name['volume'].message_type = common__pb2._VOLUMEINFO
@@ -412,11 +444,19 @@ EnableSGReq = _reflection.GeneratedProtocolMessageType('EnableSGReq', (_message.
 _sym_db.RegisterMessage(EnableSGReq)
 
 EnableSGRes = _reflection.GeneratedProtocolMessageType('EnableSGRes', (_message.Message,), dict(
+
+  DriverDataEntry = _reflection.GeneratedProtocolMessageType('DriverDataEntry', (_message.Message,), dict(
+    DESCRIPTOR = _ENABLESGRES_DRIVERDATAENTRY,
+    __module__ = 'control_api.volume_control_pb2'
+    # @@protoc_insertion_point(class_scope:huawei.proto.control.EnableSGRes.DriverDataEntry)
+    ))
+  ,
   DESCRIPTOR = _ENABLESGRES,
   __module__ = 'control_api.volume_control_pb2'
   # @@protoc_insertion_point(class_scope:huawei.proto.control.EnableSGRes)
   ))
 _sym_db.RegisterMessage(EnableSGRes)
+_sym_db.RegisterMessage(EnableSGRes.DriverDataEntry)
 
 DisableSGReq = _reflection.GeneratedProtocolMessageType('DisableSGReq', (_message.Message,), dict(
   DESCRIPTOR = _DISABLESGREQ,
@@ -461,6 +501,8 @@ ListVolumesRes = _reflection.GeneratedProtocolMessageType('ListVolumesRes', (_me
 _sym_db.RegisterMessage(ListVolumesRes)
 
 
+_ENABLESGRES_DRIVERDATAENTRY.has_options = True
+_ENABLESGRES_DRIVERDATAENTRY._options = _descriptor._ParseOptions(descriptor_pb2.MessageOptions(), _b('8\001'))
 try:
   # THESE ELEMENTS WILL BE DEPRECATED.
   # Please use the generated *_pb2_grpc.py files instead.

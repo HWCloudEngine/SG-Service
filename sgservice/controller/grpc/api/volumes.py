@@ -17,22 +17,23 @@ class VolumeClient(object):
         req = volume_control_pb2.ListDevicesReq()
         response = self.stub.ListDevices(req)
 
-        return response
-
-    def enable_sg(self, volume_id, device, size, target_iqn):
-        req = volume_control_pb2.EnableSGReq(volume_id=volume_id,
-                                             device=device,
-                                             size=size,
-                                             target_iqn=target_iqn)
-        response = self.stub.EnableSG(req)
         if response.status == common_pb2.sOk:
             return {'status': 0, 'devices': response.devices}
         else:
             return {'status': response.status}
 
-    def disable_sg(self, volume_id, target_iqn):
-        req = volume_control_pb2.DisableSGReq(volume_id=volume_id,
-                                              target_iqn=target_iqn)
+    def enable_sg(self, volume_id, device, size):
+        req = volume_control_pb2.EnableSGReq(volume_id=volume_id,
+                                             device=device,
+                                             size=size)
+        response = self.stub.EnableSG(req)
+        if response.status == common_pb2.sOk:
+            return {'status': 0, 'driver_data': response.driver_data}
+        else:
+            return {'status': response.status}
+
+    def disable_sg(self, volume_id):
+        req = volume_control_pb2.DisableSGReq(volume_id=volume_id)
         response = self.stub.DisableSG(req)
         return {'status': response.status}
 

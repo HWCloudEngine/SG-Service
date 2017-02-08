@@ -11,7 +11,7 @@
 #    under the License.
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey
-from sqlalchemy import Integer, MetaData, String, Table
+from sqlalchemy import Integer, MetaData, String, Table, Text
 
 
 def define_tables(meta):
@@ -96,6 +96,7 @@ def define_tables(meta):
         Column('replicate_status', String(64)),
         Column('replicate_mode', String(64)),
         Column('access_mode', String(64)),
+        Column('driver_data', Text),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )

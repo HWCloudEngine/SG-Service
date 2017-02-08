@@ -16,7 +16,7 @@ SQLAlchemy models for sgservice data.
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
 from oslo_utils import timeutils
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import DateTime, Boolean, ForeignKey
 from sqlalchemy import orm
@@ -134,6 +134,7 @@ class Volume(BASE, SGServiceBase):
     replicate_status = Column(String(64))
     replicate_mode = Column(String(64))
     access_mode = Column(String(64))
+    driver_data = Column(Text)
 
     replication = orm.relationship(
         Replication,

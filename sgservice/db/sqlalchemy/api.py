@@ -554,7 +554,8 @@ def volume_destroy(context, volume_id):
     updated_values = {'status': fields.VolumeStatus.DELETED,
                       'deleted': True,
                       'deleted_at': timeutils.utcnow(),
-                      'updated_at': literal_column('updated_at')}
+                      'updated_at': literal_column('updated_at'),
+                      'driver_data': None}
     with session.begin():
         volume_ref = _volume_get(context, volume_id, session=session)
         volume_ref.update(updated_values)
@@ -1146,6 +1147,23 @@ def volume_detached(context, volume_id, attachment_id):
             volume_ref['status'] = 'in-use'
             volume_ref['attach_status'] = 'attached'
             volume_ref.save(session=session)
+
+@handle_db_data_error
+@require_context
+def attachment_destroy(context, attachment_id):
+    """Destroy the specified attachment record."""
+    utcnow = timeutils.utcnow()
+    session = get_session()
+    with session.begin():
+        updated_values = {'attach_status': 'deleted',
+                          'deleted': True,
+                          'deleted_at': utcnow,
+                          'updated_at': literal_column('updated_at')}
+        volume_attachment_ref = volume_attachment_get(context, attachment_id,
+                                                      session=session)
+        volume_attachment_ref.update(updated_values)
+    del updated_values['updated_at']
+    return updated_values
 
 
 ###################

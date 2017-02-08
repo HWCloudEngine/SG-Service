@@ -17,6 +17,8 @@ from oslo_versionedobjects import fields
 from sgservice import db
 from sgservice import objects
 from sgservice.objects import base
+from sgservice import exception
+from sgservice.i18n import _
 
 
 @base.SGServiceObjectRegistry.register
@@ -25,6 +27,9 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
                        base.SGServiceComparableObject):
     # Version 1.0: Initial version
     VERSION = '1.0'
+
+    OPTIONAL_FIELDS = ['volume']
+    obj_extra_fields = ['project_id', 'volume_host']
 
     fields = {
         'id': fields.UUIDField(),
@@ -37,26 +42,96 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
         'detach_time': fields.DateTimeField(nullable=True),
         'attach_status': fields.StringField(nullable=True),
         'attach_mode': fields.StringField(nullable=True),
+
+        'volume': fields.ObjectField('Volume', nullable=False),
     }
 
-    @staticmethod
-    def _from_db_object(context, attachment, db_attachment):
+    @property
+    def project_id(self):
+        return self.volume.project_id
+
+    @property
+    def volume_host(self):
+        return self.volume.host
+
+    @classmethod
+    def _get_expected_attrs(cls, context, *args, **kwargs):
+        return ['volume']
+
+    @classmethod
+    def _from_db_object(cls, context, attachment, db_attachment,
+                        expected_attrs=None):
+        if expected_attrs is None:
+            expected_attrs = cls._get_expected_attrs(context)
+
         for name, field in attachment.fields.items():
+            if name in cls.OPTIONAL_FIELDS:
+                continue
             value = db_attachment.get(name)
             if isinstance(field, fields.IntegerField):
                 value = value or 0
             attachment[name] = value
 
+        if 'volume' in expected_attrs:
+            db_volume = db_attachment.get('volume')
+            if db_volume:
+                attachment.volume = objects.Volume._from_db_object(
+                    context, objects.Volume(), db_volume)
+
         attachment._context = context
         attachment.obj_reset_changes()
         return attachment
+
+    def obj_load_attr(self, attrname):
+        if attrname not in self.OPTIONAL_FIELDS:
+            raise exception.ObjectActionError(
+                action='obj_load_attr',
+                reason=_('attribute %s not lazy-loadable') % attrname)
+        if not self._context:
+            raise exception.OrphanedObjectError(method='obj_load_attr',
+                                                objtype=self.obj_name())
+
+        if attrname == 'volume':
+            volume = objects.Volume.get_by_id(self._context, self.volume_id)
+            self.volume = volume
+
+        self.obj_reset_changes(fields=[attrname])
 
     @base.remotable
     def save(self):
         updates = self.sgservice_obj_get_changes()
         if updates:
+            if 'volume' in updates:
+                raise exception.ObjectActionError(action='save',
+                                                  reason='volume changed')
+
             db.volume_attachment_update(self._context, self.id, updates)
             self.obj_reset_changes()
+
+    def finish_attach(self, instance_uuid, host_name, mount_point,
+                      attach_mode='rw'):
+        with self.obj_as_admin():
+            db_volume, updated_values = db.volume_attached(
+                self._context, self.id, instance_uuid,
+                host_name, mount_point, attach_mode)
+        self.update(updated_values)
+        self.obj_reset_changes(updated_values.keys())
+        return objects.Volume._from_db_object(self._context,
+                                              objects.Volume(), db_volume)
+
+    def create(self):
+        if self.obj_attr_is_set('id'):
+            raise exception.ObjectActionError(action='create',
+                                              reason=_('already created'))
+        updates = self.sgservice_obj_get_changes()
+        with self.obj_as_admin():
+            db_attachment = db.volume_attach(self._context, updates)
+        self._from_db_object(self._context, self, db_attachment)
+
+    def destroy(self):
+        update_values = db.attachment_destroy(self._context, self.id)
+        self.update(update_values)
+        self.obj_reset_changes(update_values.keys())
 
 
 @base.SGServiceObjectRegistry.register
