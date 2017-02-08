@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='common.proto',
   package='huawei.proto',
   syntax='proto3',
-  serialized_pb=_b('\n\x0c\x63ommon.proto\x12\x0chuawei.proto\"\x8b\x01\n\x0bSnapReqHead\x12\x0e\n\x06seq_id\x18\x01 \x01(\x03\x12&\n\x05scene\x18\x02 \x01(\x0e\x32\x17.huawei.proto.SnapScene\x12\x11\n\tsnap_type\x18\x03 \x01(\x05\x12\x18\n\x10replication_uuid\x18\x04 \x01(\t\x12\x17\n\x0f\x63heckpoint_uuid\x18\x05 \x01(\t\"G\n\x0bSnapAckHead\x12\x0e\n\x06seq_id\x18\x01 \x01(\x03\x12(\n\x06status\x18\x02 \x01(\x0e\x32\x18.huawei.proto.StatusCode\"w\n\x0fOperationRecord\x12\x12\n\noperate_id\x18\x01 \x01(\t\x12\x31\n\x04type\x18\x02 \x01(\x0e\x32#.huawei.proto.REPLICATION_OPERATION\x12\x0c\n\x04time\x18\x03 \x01(\x04\x12\x0f\n\x07snap_id\x18\x04 \x01(\t\"d\n\nVolumeMeta\x12&\n\x04info\x18\x01 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\x12.\n\x07records\x18\x03 \x03(\x0b\x32\x1d.huawei.proto.OperationRecord\"\xf9\x01\n\nVolumeInfo\x12\x0e\n\x06vol_id\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12/\n\nvol_status\x18\x03 \x01(\x0e\x32\x1b.huawei.proto.VOLUME_STATUS\x12\x0c\n\x04size\x18\x04 \x01(\x04\x12\x12\n\nrep_enable\x18\x06 \x01(\x08\x12\x10\n\x08rep_uuid\x18\x07 \x01(\t\x12\x14\n\x0cpeer_volumes\x18\x08 \x03(\t\x12$\n\x04role\x18\t \x01(\x0e\x32\x16.huawei.proto.REP_ROLE\x12,\n\nrep_status\x18\n \x01(\x0e\x32\x18.huawei.proto.REP_STATUS*J\n\x06RESULT\x12\x0f\n\x0b\x44RS_UNKNOWN\x10\x00\x12\n\n\x06\x44RS_OK\x10\x01\x12\x12\n\x0eINTERNAL_ERROR\x10\x02\x12\x0f\n\x0bNO_SUCH_KEY\x10\x03*\xd9\x02\n\nStatusCode\x12\x07\n\x03sOk\x10\x00\x12\x12\n\x0esInternalError\x10\x01\x12\x15\n\x11sSnapAlreadyExist\x10\x64\x12\x11\n\rsSnapNotExist\x10\x65\x12\x14\n\x10sSnapPersitError\x10\x66\x12\x19\n\x15sSnapTransactionError\x10g\x12\x14\n\x10sSnapUpdateError\x10h\x12\x19\n\x15sSnapMetaPersistError\x10i\x12\x19\n\x14sReplicationNotExist\x10\xc9\x01\x12!\n\x1csReplicationMetaPersistError\x10\xcd\x01\x12\x16\n\x11sInvalidOperation\x10\xce\x01\x12\x18\n\x13sVolumeAlreadyExist\x10\xac\x02\x12\x14\n\x0fsVolumeNotExist\x10\xad\x02\x12\x1c\n\x17sVolumeMetaPersistError\x10\xb1\x02*@\n\tSnapScene\x12\x0e\n\nFOR_NORMAL\x10\x00\x12\x13\n\x0f\x46OR_REPLICATION\x10\x01\x12\x0e\n\nFOR_BACKUP\x10\x02*\x93\x01\n\nSnapStatus\x12\x11\n\rSNAP_CREATING\x10\x00\x12\x10\n\x0cSNAP_CREATED\x10\x01\x12\x11\n\rSNAP_DELETING\x10\x02\x12\x10\n\x0cSNAP_DELETED\x10\x03\x12\x14\n\x10SNAP_ROLLBACKING\x10\x04\x12\x13\n\x0fSNAP_ROLLBACKED\x10\x05\x12\x10\n\x0cSNAP_INVALID\x10\n*?\n\x08REP_ROLE\x12\x0f\n\x0bREP_UNKNOWN\x10\x00\x12\x0f\n\x0bREP_PRIMARY\x10\x01\x12\x11\n\rREP_SECONDARY\x10\x02*\x85\x02\n\x15REPLICATION_OPERATION\x12\x15\n\x11INVALID_OPERATION\x10\x00\x12\x16\n\x12REPLICATION_CREATE\x10\x01\x12\x16\n\x12REPLICATION_ENABLE\x10\x02\x12\x17\n\x13REPLICATION_DISABLE\x10\x03\x12\x18\n\x14REPLICATION_FAILOVER\x10\x04\x12\x17\n\x13REPLICATION_REVERSE\x10\x05\x12\x15\n\x11REPLICATION_QUERY\x10\x06\x12\x16\n\x12REPLICATION_DELETE\x10\x07\x12\x14\n\x10REPLICATION_TEST\x10\x08\x12\x14\n\x10REPLICATION_LIST\x10\t*\xe6\x01\n\nREP_STATUS\x12\x0e\n\nREP_UNKNOW\x10\x00\x12\x10\n\x0cREP_CREATING\x10\x01\x12\x10\n\x0cREP_ENABLING\x10\x03\x12\x0f\n\x0bREP_ENABLED\x10\x04\x12\x11\n\rREP_DISABLING\x10\x05\x12\x10\n\x0cREP_DISABLED\x10\x06\x12\x14\n\x10REP_FAILING_OVER\x10\x07\x12\x13\n\x0fREP_FAILED_OVER\x10\x08\x12\x11\n\rREP_REVERSING\x10\t\x12\x10\n\x0cREP_DELETING\x10\x0b\x12\x0f\n\x0bREP_DELETED\x10\x0c\x12\r\n\tREP_ERROR\x10\x14*h\n\rVOLUME_STATUS\x12\x0f\n\x0bVOL_UNKNOWN\x10\x00\x12\x10\n\x0cVOL_ENABLING\x10\x01\x12\x11\n\rVOL_AVAILABLE\x10\x02\x12\x10\n\x0cVOL_ATTACHED\x10\x03\x12\x0f\n\x0bVOL_DELETED\x10\x04\x62\x06proto3')
+  serialized_pb=_b('\n\x0c\x63ommon.proto\x12\x0chuawei.proto\"w\n\x0fOperationRecord\x12\x12\n\noperate_id\x18\x01 \x01(\t\x12\x31\n\x04type\x18\x02 \x01(\x0e\x32#.huawei.proto.REPLICATION_OPERATION\x12\x0c\n\x04time\x18\x03 \x01(\x04\x12\x0f\n\x07snap_id\x18\x04 \x01(\t\"d\n\nVolumeMeta\x12&\n\x04info\x18\x01 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\x12.\n\x07records\x18\x03 \x03(\x0b\x32\x1d.huawei.proto.OperationRecord\"\xf9\x01\n\nVolumeInfo\x12\x0e\n\x06vol_id\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12/\n\nvol_status\x18\x03 \x01(\x0e\x32\x1b.huawei.proto.VOLUME_STATUS\x12\x0c\n\x04size\x18\x04 \x01(\x04\x12\x12\n\nrep_enable\x18\x06 \x01(\x08\x12\x10\n\x08rep_uuid\x18\x07 \x01(\t\x12\x14\n\x0cpeer_volumes\x18\x08 \x03(\t\x12$\n\x04role\x18\t \x01(\x0e\x32\x16.huawei.proto.REP_ROLE\x12,\n\nrep_status\x18\n \x01(\x0e\x32\x18.huawei.proto.REP_STATUS*J\n\x06RESULT\x12\x0f\n\x0b\x44RS_UNKNOWN\x10\x00\x12\n\n\x06\x44RS_OK\x10\x01\x12\x12\n\x0eINTERNAL_ERROR\x10\x02\x12\x0f\n\x0bNO_SUCH_KEY\x10\x03*\xc2\x03\n\nStatusCode\x12\x07\n\x03sOk\x10\x00\x12\x12\n\x0esInternalError\x10\x01\x12\x15\n\x11sSnapAlreadyExist\x10\x64\x12\x11\n\rsSnapNotExist\x10\x65\x12\x14\n\x10sSnapPersitError\x10\x66\x12\x19\n\x15sSnapTransactionError\x10g\x12\x14\n\x10sSnapUpdateError\x10h\x12\x19\n\x15sSnapMetaPersistError\x10i\x12\x19\n\x14sReplicationNotExist\x10\xc9\x01\x12!\n\x1csReplicationMetaPersistError\x10\xcd\x01\x12\x16\n\x11sInvalidOperation\x10\xce\x01\x12\x18\n\x13sVolumeAlreadyExist\x10\xac\x02\x12\x14\n\x0fsVolumeNotExist\x10\xad\x02\x12\x1c\n\x17sVolumeMetaPersistError\x10\xb1\x02\x12\x18\n\x13sBackupAlreadyExist\x10\x90\x03\x12\x14\n\x0fsBackupNotExist\x10\x91\x03\x12\x1d\n\x18sBackupNoFullbackupExist\x10\x92\x03\x12\x18\n\x13sBackupCanNotDelete\x10\x93\x03*?\n\x08REP_ROLE\x12\x0f\n\x0bREP_UNKNOWN\x10\x00\x12\x0f\n\x0bREP_PRIMARY\x10\x01\x12\x11\n\rREP_SECONDARY\x10\x02*\x85\x02\n\x15REPLICATION_OPERATION\x12\x15\n\x11INVALID_OPERATION\x10\x00\x12\x16\n\x12REPLICATION_CREATE\x10\x01\x12\x16\n\x12REPLICATION_ENABLE\x10\x02\x12\x17\n\x13REPLICATION_DISABLE\x10\x03\x12\x18\n\x14REPLICATION_FAILOVER\x10\x04\x12\x17\n\x13REPLICATION_REVERSE\x10\x05\x12\x15\n\x11REPLICATION_QUERY\x10\x06\x12\x16\n\x12REPLICATION_DELETE\x10\x07\x12\x14\n\x10REPLICATION_TEST\x10\x08\x12\x14\n\x10REPLICATION_LIST\x10\t*\xe6\x01\n\nREP_STATUS\x12\x0e\n\nREP_UNKNOW\x10\x00\x12\x10\n\x0cREP_CREATING\x10\x01\x12\x10\n\x0cREP_ENABLING\x10\x03\x12\x0f\n\x0bREP_ENABLED\x10\x04\x12\x11\n\rREP_DISABLING\x10\x05\x12\x10\n\x0cREP_DISABLED\x10\x06\x12\x14\n\x10REP_FAILING_OVER\x10\x07\x12\x13\n\x0fREP_FAILED_OVER\x10\x08\x12\x11\n\rREP_REVERSING\x10\t\x12\x10\n\x0cREP_DELETING\x10\x0b\x12\x0f\n\x0bREP_DELETED\x10\x0c\x12\r\n\tREP_ERROR\x10\x14*h\n\rVOLUME_STATUS\x12\x0f\n\x0bVOL_UNKNOWN\x10\x00\x12\x10\n\x0cVOL_ENABLING\x10\x01\x12\x11\n\rVOL_AVAILABLE\x10\x02\x12\x10\n\x0cVOL_ATTACHED\x10\x03\x12\x0f\n\x0bVOL_DELETED\x10\x04\x62\x06proto3')
 )
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
@@ -49,8 +49,8 @@ _RESULT = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=720,
-  serialized_end=794,
+  serialized_start=505,
+  serialized_end=579,
 )
 _sym_db.RegisterEnumDescriptor(_RESULT)
 
@@ -117,85 +117,31 @@ _STATUSCODE = _descriptor.EnumDescriptor(
       name='sVolumeMetaPersistError', index=13, number=305,
       options=None,
       type=None),
+    _descriptor.EnumValueDescriptor(
+      name='sBackupAlreadyExist', index=14, number=400,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='sBackupNotExist', index=15, number=401,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='sBackupNoFullbackupExist', index=16, number=402,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='sBackupCanNotDelete', index=17, number=403,
+      options=None,
+      type=None),
   ],
   containing_type=None,
   options=None,
-  serialized_start=797,
-  serialized_end=1142,
+  serialized_start=582,
+  serialized_end=1032,
 )
 _sym_db.RegisterEnumDescriptor(_STATUSCODE)
 
 StatusCode = enum_type_wrapper.EnumTypeWrapper(_STATUSCODE)
-_SNAPSCENE = _descriptor.EnumDescriptor(
-  name='SnapScene',
-  full_name='huawei.proto.SnapScene',
-  filename=None,
-  file=DESCRIPTOR,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='FOR_NORMAL', index=0, number=0,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='FOR_REPLICATION', index=1, number=1,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='FOR_BACKUP', index=2, number=2,
-      options=None,
-      type=None),
-  ],
-  containing_type=None,
-  options=None,
-  serialized_start=1144,
-  serialized_end=1208,
-)
-_sym_db.RegisterEnumDescriptor(_SNAPSCENE)
-
-SnapScene = enum_type_wrapper.EnumTypeWrapper(_SNAPSCENE)
-_SNAPSTATUS = _descriptor.EnumDescriptor(
-  name='SnapStatus',
-  full_name='huawei.proto.SnapStatus',
-  filename=None,
-  file=DESCRIPTOR,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_CREATING', index=0, number=0,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_CREATED', index=1, number=1,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_DELETING', index=2, number=2,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_DELETED', index=3, number=3,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_ROLLBACKING', index=4, number=4,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_ROLLBACKED', index=5, number=5,
-      options=None,
-      type=None),
-    _descriptor.EnumValueDescriptor(
-      name='SNAP_INVALID', index=6, number=10,
-      options=None,
-      type=None),
-  ],
-  containing_type=None,
-  options=None,
-  serialized_start=1211,
-  serialized_end=1358,
-)
-_sym_db.RegisterEnumDescriptor(_SNAPSTATUS)
-
-SnapStatus = enum_type_wrapper.EnumTypeWrapper(_SNAPSTATUS)
 _REP_ROLE = _descriptor.EnumDescriptor(
   name='REP_ROLE',
   full_name='huawei.proto.REP_ROLE',
@@ -217,8 +163,8 @@ _REP_ROLE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1360,
-  serialized_end=1423,
+  serialized_start=1034,
+  serialized_end=1097,
 )
 _sym_db.RegisterEnumDescriptor(_REP_ROLE)
 
@@ -272,8 +218,8 @@ _REPLICATION_OPERATION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1426,
-  serialized_end=1687,
+  serialized_start=1100,
+  serialized_end=1361,
 )
 _sym_db.RegisterEnumDescriptor(_REPLICATION_OPERATION)
 
@@ -335,8 +281,8 @@ _REP_STATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1690,
-  serialized_end=1920,
+  serialized_start=1364,
+  serialized_end=1594,
 )
 _sym_db.RegisterEnumDescriptor(_REP_STATUS)
 
@@ -370,8 +316,8 @@ _VOLUME_STATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1922,
-  serialized_end=2026,
+  serialized_start=1596,
+  serialized_end=1700,
 )
 _sym_db.RegisterEnumDescriptor(_VOLUME_STATUS)
 
@@ -394,16 +340,10 @@ sInvalidOperation = 206
 sVolumeAlreadyExist = 300
 sVolumeNotExist = 301
 sVolumeMetaPersistError = 305
-FOR_NORMAL = 0
-FOR_REPLICATION = 1
-FOR_BACKUP = 2
-SNAP_CREATING = 0
-SNAP_CREATED = 1
-SNAP_DELETING = 2
-SNAP_DELETED = 3
-SNAP_ROLLBACKING = 4
-SNAP_ROLLBACKED = 5
-SNAP_INVALID = 10
+sBackupAlreadyExist = 400
+sBackupNotExist = 401
+sBackupNoFullbackupExist = 402
+sBackupCanNotDelete = 403
 REP_UNKNOWN = 0
 REP_PRIMARY = 1
 REP_SECONDARY = 2
@@ -435,103 +375,6 @@ VOL_AVAILABLE = 2
 VOL_ATTACHED = 3
 VOL_DELETED = 4
 
-
-
-_SNAPREQHEAD = _descriptor.Descriptor(
-  name='SnapReqHead',
-  full_name='huawei.proto.SnapReqHead',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='seq_id', full_name='huawei.proto.SnapReqHead.seq_id', index=0,
-      number=1, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    _descriptor.FieldDescriptor(
-      name='scene', full_name='huawei.proto.SnapReqHead.scene', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    _descriptor.FieldDescriptor(
-      name='snap_type', full_name='huawei.proto.SnapReqHead.snap_type', index=2,
-      number=3, type=5, cpp_type=1, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    _descriptor.FieldDescriptor(
-      name='replication_uuid', full_name='huawei.proto.SnapReqHead.replication_uuid', index=3,
-      number=4, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    _descriptor.FieldDescriptor(
-      name='checkpoint_uuid', full_name='huawei.proto.SnapReqHead.checkpoint_uuid', index=4,
-      number=5, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=_b("").decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=31,
-  serialized_end=170,
-)
-
-
-_SNAPACKHEAD = _descriptor.Descriptor(
-  name='SnapAckHead',
-  full_name='huawei.proto.SnapAckHead',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='seq_id', full_name='huawei.proto.SnapAckHead.seq_id', index=0,
-      number=1, type=3, cpp_type=2, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-    _descriptor.FieldDescriptor(
-      name='status', full_name='huawei.proto.SnapAckHead.status', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      options=None),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=172,
-  serialized_end=243,
-)
 
 
 _OPERATIONRECORD = _descriptor.Descriptor(
@@ -581,8 +424,8 @@ _OPERATIONRECORD = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=245,
-  serialized_end=364,
+  serialized_start=30,
+  serialized_end=149,
 )
 
 
@@ -619,8 +462,8 @@ _VOLUMEMETA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=366,
-  serialized_end=466,
+  serialized_start=151,
+  serialized_end=251,
 )
 
 
@@ -706,45 +549,25 @@ _VOLUMEINFO = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=469,
-  serialized_end=718,
+  serialized_start=254,
+  serialized_end=503,
 )
 
-_SNAPREQHEAD.fields_by_name['scene'].enum_type = _SNAPSCENE
-_SNAPACKHEAD.fields_by_name['status'].enum_type = _STATUSCODE
 _OPERATIONRECORD.fields_by_name['type'].enum_type = _REPLICATION_OPERATION
 _VOLUMEMETA.fields_by_name['info'].message_type = _VOLUMEINFO
 _VOLUMEMETA.fields_by_name['records'].message_type = _OPERATIONRECORD
 _VOLUMEINFO.fields_by_name['vol_status'].enum_type = _VOLUME_STATUS
 _VOLUMEINFO.fields_by_name['role'].enum_type = _REP_ROLE
 _VOLUMEINFO.fields_by_name['rep_status'].enum_type = _REP_STATUS
-DESCRIPTOR.message_types_by_name['SnapReqHead'] = _SNAPREQHEAD
-DESCRIPTOR.message_types_by_name['SnapAckHead'] = _SNAPACKHEAD
 DESCRIPTOR.message_types_by_name['OperationRecord'] = _OPERATIONRECORD
 DESCRIPTOR.message_types_by_name['VolumeMeta'] = _VOLUMEMETA
 DESCRIPTOR.message_types_by_name['VolumeInfo'] = _VOLUMEINFO
 DESCRIPTOR.enum_types_by_name['RESULT'] = _RESULT
 DESCRIPTOR.enum_types_by_name['StatusCode'] = _STATUSCODE
-DESCRIPTOR.enum_types_by_name['SnapScene'] = _SNAPSCENE
-DESCRIPTOR.enum_types_by_name['SnapStatus'] = _SNAPSTATUS
 DESCRIPTOR.enum_types_by_name['REP_ROLE'] = _REP_ROLE
 DESCRIPTOR.enum_types_by_name['REPLICATION_OPERATION'] = _REPLICATION_OPERATION
 DESCRIPTOR.enum_types_by_name['REP_STATUS'] = _REP_STATUS
 DESCRIPTOR.enum_types_by_name['VOLUME_STATUS'] = _VOLUME_STATUS
-
-SnapReqHead = _reflection.GeneratedProtocolMessageType('SnapReqHead', (_message.Message,), dict(
-  DESCRIPTOR = _SNAPREQHEAD,
-  __module__ = 'common_pb2'
-  # @@protoc_insertion_point(class_scope:huawei.proto.SnapReqHead)
-  ))
-_sym_db.RegisterMessage(SnapReqHead)
-
-SnapAckHead = _reflection.GeneratedProtocolMessageType('SnapAckHead', (_message.Message,), dict(
-  DESCRIPTOR = _SNAPACKHEAD,
-  __module__ = 'common_pb2'
-  # @@protoc_insertion_point(class_scope:huawei.proto.SnapAckHead)
-  ))
-_sym_db.RegisterMessage(SnapAckHead)
 
 OperationRecord = _reflection.GeneratedProtocolMessageType('OperationRecord', (_message.Message,), dict(
   DESCRIPTOR = _OPERATIONRECORD,

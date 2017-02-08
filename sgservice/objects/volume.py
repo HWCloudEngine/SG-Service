@@ -48,6 +48,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'replicate_status': fields.StringField(nullable=True),
         'replicate_mode': fields.StringField(nullable=True),
         'access_mode': fields.StringField(nullable=True),
+        'driver_data': fields.StringField(nullable=True),
 
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
                                                 nullable=True),

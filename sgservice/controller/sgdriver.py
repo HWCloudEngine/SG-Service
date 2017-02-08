@@ -12,107 +12,86 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import abc
+import six
+
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from sgservice.controller.grpc.client import ControlClient
-from sgservice import exception
-from sgservice.i18n import _
-
-sg_client_opts = [
-    cfg.StrOpt('sg_client_host',
-               help='The host of sg.'),
-    cfg.StrOpt('sg_client_port',
-               help='The gprc port of sg'),
-    cfg.StrOpt('sg_target_prefix',
-               default='iqn.2017-01.huawei.sgs:',
-               help='Target prefix for sg volumes')
-]
-
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
-CONF.register_opts(sg_client_opts, group='sg_client')
 
 
+@six.add_metaclass(abc.ABCMeta)
 class SGDriver(object):
+    @abc.abstractmethod
     def __init__(self):
-        self.sg_ctrl = ControlClient(CONF.sg_client.sg_client_host,
-                                     CONF.sg_client.sg_client_port)
-
-    def _generate_target_iqn(self, volume_id):
-        return "%s%s" % (CONF.sg_client.sg_target_prefix, volume_id)
-
-    def list_devices(self):
-        response = self.sg_ctrl.volumes.list_devices()
-        if response['status'] != 0:
-            msg = _("Call list_devices to sg client failed")
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
-
-        return response['devices']
-
-    def enable_sg(self, volume, device):
-        response = self.sg_ctrl.volumes.enable_sg(
-            volume['id'], device, volume['size'],
-            self._generate_target_iqn(volume['id']))
-        if response['status'] != 0:
-            msg = _("Call enable_sg to sg client failed")
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
-
-    def disable_sg(self, volume_id):
-        response = self.sg_ctrl.volumes.disable_sg(
-            volume_id, self._generate_target_iqn(volume_id))
-        if response['status'] != 0:
-            msg = _("Call disable_sg to sg client failed")
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
-
-    def get_volume(self, volume_id):
-        response = self.sg_ctrl.volumes.get_volume(volume_id)
-        if response['status'] != 0:
-            msg = _("Call get_volume to sg client failed")
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
-        return response['volume']
-
-    def list_volumes(self):
-        response = self.sg_ctrl.volumes.list_volumes()
-        if response['status'] != 0:
-            msg = _("Call list_volumes to sg client failed")
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
-        return response['volumes']
-
-    def initialize_connection(self, volume_id):
         pass
 
+    @abc.abstractmethod
+    def enable_sg(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def disable_sg(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def get_volume(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def list_volumes(self):
+        pass
+
+    @abc.abstractmethod
+    def attach_volume(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def detach_volume(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def initialize_connection(self, *args, **kwargs):
+        pass
+
+    @abc.abstractmethod
     def create_backup(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def delete_backup(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def restore_backup(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def create_snapshot(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def delete_snapshot(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def enable_replicate(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def disable_replicate(self, **kwarg):
         pass
 
+    @abc.abstractmethod
     def failover_replicate(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def delete_replicate(self, **kwargs):
         pass
 
+    @abc.abstractmethod
     def reverse_replicate(self, **kwargs):
         pass

@@ -31,6 +31,8 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
     # Version 1.0: Initial version
     VERSION = '1.0'
 
+    OPTIONAL_FIELDS = ['volume']
+
     fields = {
         'id': fields.UUIDField(),
         'user_id': fields.StringField(),
@@ -42,7 +44,9 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
         'checkpoint_id': fields.StringField(nullable=True),
         'destination': fields.StringField(nullable=True),
         'availability_zone': fields.StringField(nullable=True),
-        'volume_id': fields.UUIDField(nullable=True)
+        'volume_id': fields.UUIDField(nullable=True),
+
+        'volume': fields.ObjectField('Volume', nullable=True),
     }
 
     # NOTE(thangp): obj_extra_fields is used to hold properties that are not
@@ -53,19 +57,50 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
     def name(self):
         return CONF.snapshot_name_template % self.id
 
-    @staticmethod
-    def _from_db_object(context, snapshot, db_snapshot, expected_attrs=None):
+    @property
+    def volume_name(self):
+        return self.volume.name
+
+    @classmethod
+    def _get_expected_attrs(cls, context, *args, **kwargs):
+        return cls.OPTIONAL_FIELDS
+
+    @classmethod
+    def _from_db_object(cls, context, snapshot, db_snapshot,
+                        expected_attrs=None):
         if expected_attrs is None:
-            expected_attrs = []
+            expected_attrs = cls._get_expected_attrs(context)
+
         for name, field in snapshot.fields.items():
             value = db_snapshot.get(name)
             if isinstance(field, fields.IntegerField):
                 value = value if value is not None else 0
             setattr(snapshot, name, value)
 
+        if 'volume' in expected_attrs:
+            db_volume = db_snapshot.get('volume')
+            if db_volume:
+                snapshot.volume = objects.Volume._from_db_object(
+                    context, objects.Volume(), db_volume)
+
         snapshot._context = context
         snapshot.obj_reset_changes()
         return snapshot
+
+    def obj_load_attr(self, attrname):
+        if attrname not in self.OPTIONAL_FIELDS:
+            raise exception.ObjectActionError(
+                action='obj_load_attr',
+                reason=_('attribute %s not lazy-loadable') % attrname)
+        if not self._context:
+            raise exception.OrphanedObjectError(method='obj_load_attr',
+                                                objtype=self.obj_name())
+
+        if attrname == 'volume':
+            volume = objects.Volume.get_by_id(self._context, self.volume_id)
+            self.volume = volume
+
+        self.obj_reset_changes(fields=[attrname])
 
     @base.remotable
     def create(self):
@@ -80,6 +115,9 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
     def save(self):
         updates = self.sgservice_obj_get_changes()
         if updates:
+            if 'volume' in updates:
+                raise exception.ObjectActionError(action='save',
+                                                  reason='volume changed')
             db.snapshot_update(self._context, self.id, updates)
         self.obj_reset_changes()
 
