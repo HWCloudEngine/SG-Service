@@ -53,8 +53,8 @@ class Backup(base.SGServicePersistentObject, base.SGServiceObject,
     def name(self):
         return CONF.backup_name_template % self.id
 
-    @staticmethod
-    def _from_db_object(context, backup, db_backup):
+    @classmethod
+    def _from_db_object(cls, context, backup, db_backup, expected_attrs=None):
         for name, field in backup.fields.items():
             value = db_backup.get(name)
             if isinstance(field, fields.IntegerField):

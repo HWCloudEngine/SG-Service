@@ -484,10 +484,10 @@ def volume_attach(context, values):
     return IMPL.volume_attach(context, values)
 
 
-def volume_attached(context, volume_id, instance_id, host_name, mountpoint,
+def volume_attached(context, attachment_id, instance_id, host_name, mountpoint,
                     attach_mode='rw'):
     """Ensure that a volume is set as attached."""
-    return IMPL.volume_attached(context, volume_id, instance_id, host_name,
+    return IMPL.volume_attached(context, attachment_id, instance_id, host_name,
                                 mountpoint, attach_mode)
 
 
@@ -517,6 +517,11 @@ def volume_attachment_update(context, attachment_id, values):
 def volume_detached(context, volume_id, attachment_id):
     """Ensure that a volume is set as detached."""
     return IMPL.volume_detached(context, volume_id, attachment_id)
+
+
+def attachment_destroy(context, attachment_id):
+    """Destroy the attachment or raise if it does not exist"""
+    return IMPL.attachment_destroy(context, attachment_id)
 
 
 ##################

@@ -14,10 +14,13 @@
 Controller Service
 """
 
+import six
+
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_service import loopingcall
+from oslo_utils import uuidutils
 
 from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller.sgdriver import SGDriver
@@ -26,6 +29,7 @@ from sgservice.i18n import _, _LE, _LI
 from sgservice import manager
 from sgservice import objects
 from sgservice.objects import fields
+from sgservice import utils
 
 controller_manager_opts = [
     cfg.IntOpt('sync_status_interval',
@@ -221,3 +225,102 @@ class ControllerManager(manager.Manager):
             'sg_volume': volume,
             'nova_client': nova_client,
         }
+
+    def attach_volume(self, context, volume_id, instance_uuid, host_name,
+                      mountpoint, mode):
+        volume = objects.Volume.get_by_id(context, volume_id)
+        if volume['status'] == 'attaching':
+            access_mode = volume['access_mode']
+            if access_mode is not None and access_mode != mode:
+                raise exception.InvalidVolume(
+                    reason=_('being attached by different mode'))
+
+        host_name_sanitized = utils.sanitize_hostname(
+            host_name) if host_name else None
+        if instance_uuid:
+            attachments = self.db.volume_attachment_get_all_by_instance_uuid(
+                context, volume_id, instance_uuid)
+        else:
+            attachments = self.db.volume_attachment_get_all_by_host(
+                context, volume_id, host_name_sanitized)
+        if attachments:
+            self.db.volume_update(context, volume_id, {'status': 'in-use'})
+            return
+
+        values = {'volume_id': volume_id,
+                  'attach_status': 'attaching'}
+        attachment = self.db.volume_attach(context.elevated(), values)
+        attachment_id = attachment['id']
+
+        if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
+            self.db.volume_attachment_update(
+                context, attachment_id, {'attach_status': 'error_attaching'})
+            raise exception.InvalidUUID(uuid=instance_uuid)
+
+        try:
+            self.driver.attach_volume(context, volume, instance_uuid,
+                                      host_name_sanitized, mountpoint, mode)
+        except Exception as err:
+            self.db.volume_attachment_update(
+                context, attachment_id, {'attach_status': 'error_attaching'})
+            raise err
+
+        self.db.volume_attached(context.elevated(),
+                                attachment_id,
+                                instance_uuid,
+                                host_name_sanitized,
+                                mountpoint,
+                                mode)
+        LOG.info(_LI("Attach volume completed successfully."))
+        return self.db.volume_attachment_get(context, attachment_id)
+
+    def detach_volume(self, context, volume_id, attachment_id):
+        volume = self.db.volume_get(context, volume_id)
+        if attachment_id:
+            try:
+                attachment = self.db.volume_attachment_get(context,
+                                                           attachment_id)
+            except exception.VolumeAttachmentNotFound:
+                LOG.info(_LI("Volume detach called, but volume not attached"))
+                self.db.volume_detached(context, volume_id, attachment_id)
+                return
+        else:
+            attachments = self.db.volume_attachment_get_all_by_volume_id(
+                context, volume_id)
+            if len(attachments) > 1:
+                msg = _("Detach volume failed: More than one attachment, "
+                        "but no attachment_id provide.")
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
+            elif len(attachments) == 1:
+                attachment = attachments[0]
+            else:
+                LOG.info(_LI("Volume detach called, but volume not attached"))
+                self.db.volume_update(context, volume_id,
+                                      {'status': 'available'})
+                return
+
+        try:
+            self.driver.detach_volume(context, volume, attachment)
+        except Exception as err:
+            self.db.volume_attachment_update(
+                context, attachment_id, {'attach_status': 'error_detaching'})
+            raise err
+
+        self.db.volume_detached(context.elevated(), volume_id,
+                                attachment.get('id'))
+        LOG.info(_LI("Detach volume completed successfully."))
+
+    def initialize_connection(self, context, volume_id, connector):
+        volume = objects.Volume.get_by_id(context, volume_id)
+        try:
+            conn_info = self.driver.initialize_connection(context, volume,
+                                                          connector)
+        except Exception as err:
+            msg = (_('Driver initialize connection failed '
+                     '(error: %(err)s).') % {'err': six.text_type(err)})
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+        LOG.info(_LI("Initialize connection completed successfully."))
+        return conn_info
