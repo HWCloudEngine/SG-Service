@@ -46,7 +46,8 @@ class APIRouter(wsgi_common.Router):
         mapper.resource("snapshot", "snapshots",
                         controller=snapshots_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST'})
+                        member={'action': 'POST', 'rollback': 'POST',
+                                'create_volume': 'POST'})
 
         backups_resources = backups.create_resource()
         mapper.resource("backup", "backups",

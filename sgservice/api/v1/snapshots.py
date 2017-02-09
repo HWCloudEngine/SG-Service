@@ -14,11 +14,15 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 import webob
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
-from sgservice.i18n import _LI
+from sgservice.controller.api import API as ServiceAPI
+from sgservice import exception
+from sgservice.i18n import _, _LI
+from sgservice import utils
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
@@ -33,10 +37,26 @@ class SnapshotViewBuilder(common.ViewBuilder):
         """Initialize view builder."""
         super(SnapshotViewBuilder, self).__init__()
 
+    def rollback_summary(self, request, rollback):
+        """summary view of rollback"""
+        rollback_ref = {
+            'rollback': {
+                'id': rollback.get('id'),
+                'volume_id': rollback.get('volume_id'),
+                'volume_status': rollback.get('volume_status')
+            }
+        }
+        return rollback_ref
+
     def detail(self, request, snapshot):
         """Detailed view of a single snapshot."""
         snapshot_ref = {
             'snapshot': {
+                'id': snapshot.id,
+                'name': snapshot.display_name,
+                'description': snapshot.display_description,
+                'volume_id': snapshot.volume_id,
+                'status': snapshot.status
             }
         }
         return snapshot_ref
@@ -79,37 +99,135 @@ class SnapshotsController(wsgi.Controller):
     _view_builder_class = SnapshotViewBuilder
 
     def __init__(self):
+        self.service_api = ServiceAPI()
         super(SnapshotsController, self).__init__()
 
     def show(self, req, id):
         """Return data about the given snapshots."""
         LOG.info(_LI("Show snapshot with id: %s"), id)
-        pass
-        return {"snapshot": {"status": "available"}}
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+        return self._view_builder.detail(req, snapshot)
 
     def delete(self, req, id):
         """Delete a snapshot."""
         LOG.info(_LI("Delete snapshot with id: %s"), id)
-        pass
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+        self.service_api.delete_snapshot(context, snapshot)
         return webob.Response(status_int=202)
 
     def index(self, req):
         """Returns a list of snapshots, transformed through view builder."""
         LOG.info(_LI("Show snapshot list"))
-        return {"snapshots": {}}
+        context = req.environ['sgservice.context']
+        params = req.params.copy()
+        marker, limit, offset = common.get_pagination_params(params)
+        sort_keys, sort_dirs = common.get_sort_params(params)
+        filters = params
+
+        utils.remove_invaild_filter_options(
+            context, filters, self._get_replication_filter_options())
+        utils.check_filters(filters)
+
+        snapshots = self.service_api.get_all_snapshots(
+            context, marker=marker, limit=limit, sort_keys=sort_keys,
+            sort_dirs=sort_dirs, filters=filters, offset=offset)
+
+        retval_snapshots = self._view_builder.detail_list(req, snapshots)
+        LOG.info(_LI("Show snapshot list request issued successfully."))
+        return retval_snapshots
 
     def create(self, req, body):
         """Creates a new snapshot."""
-
         LOG.debug('Create snapshot request body: %s', body)
-        pass
-        return {"snapshot": {"status": "creating"}}
+        context = req.environ['sgservice.context']
+        snapshot = body['snapshot']
+
+        volume_id = snapshot.get('volume_id', None)
+        if volume_id is None:
+            msg = _('Incorrect request body format')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+
+        name = snapshot.get('name', 'snapshot-%s' % volume_id)
+        description = snapshot.get('description', name)
+        checkpoint_id = snapshot.get('checkpoint_id', None)
+
+        if not uuidutils.is_uuid_like(volume_id):
+            msg = _("Invalid volume id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(volume_id)
+
+        if checkpoint_id and not uuidutils.is_uuid_like(checkpoint_id):
+            msg = _("Invalid checkpoint id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(checkpoint_id)
+
+        volume = self.service_api.get(context, volume_id)
+        snapshot = self.service_api.create_snapshot(
+            context, name, description, volume, checkpoint_id)
+        return self._view_builder.detail(req, snapshot)
+
+    def rollback(self, req, id, body):
+        """Rollback a snapshot to volume"""
+        LOG.info(_LI("Rollback snapshot with id: %s"), id)
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+        rollback = self.service_api.rollback_snapshot(context, snapshot)
+        return self._view_builder.rollback_summary(req, rollback)
+
+    def create_volume(self, req, body):
+        """Creates a new volume from snapshot."""
+        LOG.debug('Create volume from snapshot, request body: %s', body)
+        context = req.environ['sgservice.context']
+        volume = body['volume']
+
+        snapshot_id = volume.get('snapshot_id')
+        if snapshot_id is None:
+            msg = _('Incorrect request body format')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if not uuidutils.is_uuid_like(snapshot_id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(snapshot_id)
+
+        volume_type = volume.get('volume_type', None)
+        availability_zone = volume.get('availability_zone', None)
+        name = volume.get('name', 'volume-%s' % snapshot_id)
+        description = volume.get('description', name)
+        snapshot = self.service_api.get_snapshot(context, snapshot_id)
+        self.service_api.create_volume(context, snapshot, volume_type,
+                                       availability_zone, name, description)
+        return webob.Response(status_int=202)
 
     def update(self, req, id, body):
         """Update a snapshot."""
         LOG.info(_LI("Update snapshot with id: %s"), id)
-        pass
-        return {"snapshot": {"status": "available"}}
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+
+        # TODO(luobin): implement update snapshot [name, description]
+        return self._view_builder.detail(req, snapshot)
 
 
 def create_resource():
