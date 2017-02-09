@@ -240,6 +240,9 @@ class InvalidBackup(Invalid):
     message = _("Invalid backup: %(reason)s")
 
 
+class InvalidReplication(Invalid):
+    message = _("Invalid replication: %(reason)s")
+
 class SGDriverError(SGServiceException):
     message = _("SG Driver Error: %(reason)s")
 
