@@ -44,6 +44,7 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
         'checkpoint_id': fields.StringField(nullable=True),
         'destination': fields.StringField(nullable=True),
         'availability_zone': fields.StringField(nullable=True),
+        'replication_zone': fields.StringField(nullable=True),
         'volume_id': fields.UUIDField(nullable=True),
 
         'volume': fields.ObjectField('Volume', nullable=True),

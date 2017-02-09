@@ -242,3 +242,19 @@ class InvalidBackup(Invalid):
 
 class SGDriverError(SGServiceException):
     message = _("SG Driver Error: %(reason)s")
+
+
+class SyncVolumeFailed(SGServiceException):
+    message = _("Sync volume status failed: %(reason)s")
+
+
+class AttachSGFailed(SGServiceException):
+    message = _("Attach volume to sg-client failed: %(reason)s")
+
+
+class DetachSGFailed(SGServiceException):
+    message = _("Detach volume to sg-client failed: %(reason)s")
+
+
+class RestoreBackupFailed(SGServiceException):
+    message = _("Restore backup failed: %(reason)s")
