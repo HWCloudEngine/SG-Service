@@ -165,6 +165,7 @@ class Snapshot(BASE, SGServiceBase):
                            nullable=True)
     destination = Column(String(36))
     availability_zone = Column(String(255))
+    replication_zone = Column(String(255))
     volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
 
     checkpoint = orm.relationship(
@@ -205,6 +206,7 @@ class Backup(BASE, SGServiceBase):
     type = Column(String(36))
     destination = Column(String(36))
     availability_zone = Column(String(255))
+    replication_zone = Column(String(255))
     volume_id = Column(String(36), nullable=False)
 
     @property

@@ -16,6 +16,7 @@ import six
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import excutils
 
 from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller import rpcapi as protection_rpcapi
@@ -247,3 +248,130 @@ class API(base.Base):
                                                                     connector)
         LOG.info(_LI("Initialize volume connection completed successfully."))
         return init_results
+
+    def get_backup(self, context, backup_id):
+        try:
+            backup = objects.Backup.get_by_id(context, backup_id)
+            LOG.info(_LI("Backup info retrieved successfully."),
+                     resource=backup)
+            return backup
+        except Exception:
+            raise exception.BackupNotFound(backup_id)
+
+    def create_backup(self, context, name, description, volume,
+                      backup_type='incremental', backup_destination='local'):
+        if volume['status'] not in ['enabled', 'in-use']:
+            msg = (_('Volume to be backed up should be enabled or in-use, '
+                     'but current status is "%s".') % volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        previous_status = volume['status']
+        self.db.volume_update(context, volume['id'],
+                              {'status': 'backing-up',
+                               'previous_status': previous_status})
+        backup = None
+        try:
+            kwargs = {
+                'use_id': context.user_id,
+                'project_id': context.project_id,
+                'display_name': name,
+                'display_description': description,
+                'volume_id': volume['id'],
+                'status': fields.BackupStatus.CREATING,
+                'size': volume['size'],
+                'type': backup_type,
+                'destination': backup_destination,
+                'availability_zone': volume['availability_zone'],
+                'replication_zone': volume['replication_zone']
+            }
+            backup = objects.Backup(context, **kwargs)
+            backup.create()
+            backup.save()
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                if backup and 'id' in backup:
+                    backup.destroy()
+                self.db.volume_update(context, volume['id'],
+                                      {'status': previous_status})
+
+        self.controller_rpcapi.create_backup(context, backup)
+        return backup
+
+    def delete_backup(self, context, backup):
+        backup.update({'status': fields.BackupStatus.DELETING})
+        backup.save()
+        self.controller_rpcapi.delete_backup(context, backup)
+
+    def restore_backup(self, context, backup, volume):
+        if volume['status'] != fields.VolumeStatus.ENABLED:
+            msg = _('Volume to be restored must be enabled')
+            raise exception.InvalidVolume(reason=msg)
+
+        if backup['size'] > volume['size']:
+            msg = (_('Volume size %(volume_size)d is too small to restore '
+                     'backup of size %(size)d') %
+                   {'volume_size': volume['size'], 'size': backup['size']})
+            raise exception.InvalidVolume(reason=msg)
+
+        backup_type = backup['type']
+        if backup_type == 'local':
+            if backup['availability_zone'] != volume['availability_zone']:
+                msg = _('Local backup and volume are not in the same zone')
+                raise exception.InvalidVolume(reason=msg)
+        else:
+            if backup['replication_zone'] != volume['availability_zone']:
+                msg = _('Remote backup and volume are not in the same zone')
+                raise exception.InvalidVolume(reason=msg)
+
+        backup.update({'status': fields.BackupStatus.RESTORING})
+        backup.save()
+
+        volume.update({'status': fields.VolumeStatus.RESTORING_BACKUP})
+        volume.save()
+
+        self.controller_rpcapi.restore_backup(context, backup, volume)
+
+        restore = {
+            'backup_id': backup['id'],
+            'volume_id': volume['id'],
+            'volume_name': volume['display_name']
+        }
+
+        return restore
+
+    def get_all_backups(self, context, marker=None, limit=None, sort_keys=None,
+                        sort_dirs=None, filters=None, offset=None):
+        if filters is None:
+            filters = {}
+
+        all_tenants = utils.get_bool_params('all_tenants', filters)
+
+        try:
+            if limit is not None:
+                limit = int(limit)
+                if limit < 0:
+                    msg = _('limit param must be positive')
+                    raise exception.InvalidInput(reason=msg)
+        except ValueError:
+            msg = _('limit param must be an integer')
+            raise exception.InvalidInput(reason=msg)
+
+        if filters:
+            LOG.debug("Searching by: %s.", six.text_type(filters))
+
+        if context.is_admin and all_tenants:
+            # Need to remove all_tenants to pass the filtering below.
+            del filters['all_tenants']
+            backups = objects.BackupList.get_all(context, marker, limit,
+                                                 sort_keys=sort_keys,
+                                                 sort_dirs=sort_dirs,
+                                                 filters=filters,
+                                                 offset=offset)
+        else:
+            backups = objects.BackupList.get_all_by_project(
+                context, context.project_id, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs, filters=filters,
+                offset=offset)
+
+        LOG.info(_LI("Get all backups completed successfully."))
+        return backups

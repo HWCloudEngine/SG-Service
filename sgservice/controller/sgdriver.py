@@ -109,13 +109,24 @@ class SGDriver(object):
                            'data': data}
         return connection_info
 
-    def create_backup(self, **kwargs):
+    def create_backup(self, backup, volume):
+        # TODO(luobin)
         pass
 
-    def delete_backup(self, **kwargs):
+    def delete_backup(self, backup):
+        # TODO(luobin)
         pass
 
-    def restore_backup(self, **kwargs):
+    def restore_backup(self, backup, volume):
+        # TODO(luobin)
+        pass
+
+    def get_backup(self, backup_id):
+        # TODO(luobin)
+        pass
+
+    def list_backups(self):
+        # TODO(luobin)
         pass
 
     def create_snapshot(self, **kwargs):

@@ -20,6 +20,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
 from oslo_service import loopingcall
+from oslo_utils import excutils
 from oslo_utils import uuidutils
 
 from sgservice.controller.client_factory import ClientFactory
@@ -72,17 +73,19 @@ class ControllerManager(manager.Manager):
         self.sync_status_interval = CONF.sync_status_interval
         self.driver = SGDriver()
 
-        self.enable_volumes = {}
+        self.enable_volumes = {}  # used to sync enable-volumes from cinder
         sync_enable_volume_loop = loopingcall.FixedIntervalLoopingCall(
             self._sync_enable_volume)
         sync_enable_volume_loop.start(interval=self.sync_status_interval,
                                       initial_delay=self.sync_status_interval)
 
-        self.disable_volumes = {}
+        self.disable_volumes = {}  # used to sync disable-volumes from cinder
         sync_disable_volume_loop = loopingcall.FixedIntervalLoopingCall(
             self._sync_disable_volume)
         sync_disable_volume_loop.start(interval=self.sync_status_interval,
                                        initial_delay=self.sync_status_interval)
+
+        self.backups = {}  # used to sync backups from sg-client
 
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
@@ -329,3 +332,129 @@ class ControllerManager(manager.Manager):
 
         LOG.info(_LI("Initialize connection completed successfully."))
         return conn_info
+
+    def _update_backup_error(self, backup):
+        backup.update({'status': fields.BackupStatus.ERROR})
+        backup.save()
+
+    def create_backup(self, context, backup_id):
+        backup = objects.Backup.get_by_id(context, backup_id)
+        volume_id = backup.volume_id
+        LOG.info(_LI("Create backup started, backup:%(backup_id)s, volume: "
+                     "%(volume_id)s"),
+                 {'volume_id': volume_id, 'backup_id': backup_id})
+
+        volume = objects.Volume.get_by_id(context, volume_id)
+        previous_status = volume.get('previous-status', None)
+
+        expected_status = 'backing-up'
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Create backup aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            self.db.volume_update(context, volume_id,
+                                  {'status': previous_status,
+                                   'previous_status': 'error_backing_up'})
+            raise exception.InvalidVolume(reason=msg)
+
+        expected_status = fields.BackupStatus.CREATING
+        actual_status = backup['status']
+        if actual_status != expected_status:
+            msg = (_('Create backup aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            self.db.volume_update(context, volume_id,
+                                  {'status': previous_status,
+                                   'previous_status': 'error_backing_up'})
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.create_backup(backup=backup, volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_backup_error(backup)
+                self.db.volume_update(context, volume_id,
+                                      {'status': previous_status,
+                                       'previous_status': 'error_backing_up'})
+
+        self.backups[backup_id] = {
+            'id': backup_id,
+            'action': 'create'
+        }
+
+    def delete_backup(self, context, backup_id):
+        LOG.info(_LI("Delete backup started, backup:%s"), backup_id)
+
+        backup = objects.Backup.get_by_id(context, backup_id)
+
+        expected_status = fields.BackupStatus.DELETING
+        actual_status = backup['status']
+        if actual_status != expected_status:
+            msg = (_('Delete backup aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.delete_backup(backup=backup)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_backup_error(backup)
+
+        self.backups[backup_id] = {
+            'id': backup_id,
+            'action': 'delete'
+        }
+
+    def restore_backup(self, context, backup_id, volume_id):
+        LOG.info(_LI("Restore backup started, backup:%(backup_id)s, volume: "
+                     "%(volume_id)s"),
+                 {'volume_id': volume_id, 'backup_id': backup_id})
+
+        volume = objects.Volume.get_by_id(context, volume_id)
+        backup = objects.Backup.get_by_id(context, backup_id)
+
+        expected_status = 'restoring-backup'
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Restore backup aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.backup_update(
+                context, backup_id,
+                {'status': fields.BackupStatus.AVAILABLE})
+            self.db.volume_update(
+                context, volume_id,
+                {'status': fields.VolumeStatus.ERROR_RESTORING})
+            raise exception.InvalidVolume(reason=msg)
+
+        expected_status = 'restoring'
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Restore backup aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            self.db.volume_update(context, volume_id,
+                                  {'status': fields.VolumeStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.restore_backup(backup=backup, volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.backup_update(
+                    context, backup_id,
+                    {'status': fields.BackupStatus.AVAILABLE})
+                self.db.volume_update(
+                    context, volume_id,
+                    {'status': fields.VolumeStatus.ERROR_RESTORING})
