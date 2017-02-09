@@ -242,3 +242,7 @@ class InvalidBackup(Invalid):
 
 class SGDriverError(SGServiceException):
     message = _("SG Driver Error: %(reason)s")
+
+
+class RestoreBackupFailed(SGServiceException):
+    message = _("Restore backup failed: %(reason)s")
