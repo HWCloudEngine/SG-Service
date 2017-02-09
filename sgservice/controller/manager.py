@@ -14,6 +14,7 @@
 Controller Service
 """
 
+from eventlet import greenthread
 import six
 
 from cinderclient import exceptions as cinder_exc
@@ -40,7 +41,9 @@ controller_manager_opts = [
                help='sync resources status interval'),
     cfg.StrOpt('sg_driver',
                default='sgservice.controller.drivers.iscsi.ISCSISGDriver',
-               help='The class name of storage gateway driver')
+               help='The class name of storage gateway driver'),
+    cfg.StrOpt('retry_attempts',
+               default=10)
 ]
 
 sg_client_opts = [
@@ -92,6 +95,8 @@ class ControllerManager(manager.Manager):
                                       initial_delay=self.sync_status_interval)
 
         self.sync_backups = {}  # used to sync backups from sg-client
+        self.sync_snapshots = {}  # used to sync snapshots from sg-client
+        self.sync_volumes = {}  # used to sync volumes from sg-client
 
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
@@ -443,9 +448,9 @@ class ControllerManager(manager.Manager):
                                       {'status': previous_status,
                                        'previous_status': 'error_backing_up'})
 
-        self.backups[backup_id] = {
-            'id': backup_id,
-            'action': 'create'
+        self.sync_backups[backup_id] = {
+            'action': 'create',
+            'backup': backup
         }
 
     def delete_backup(self, context, backup_id):
@@ -529,4 +534,93 @@ class ControllerManager(manager.Manager):
                 'mountpoint': mountpoint,
                 'volume_id': volume_id
             }
+        }
+
+    def _update_snapshot_error(self, snapshot):
+        snapshot.update({'status': fields.SnapshotStatus.ERROR})
+        snapshot.save()
+
+    def create_snapshot(self, context, snapshot_id):
+        snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+        volume_id = snapshot.volume_id
+        LOG.info(_LI("Create snapshot started, snapshot:%(snapshot_id)s, "
+                     "volume: %(volume_id)s"),
+                 {'volume_id': volume_id, 'snapshot_id': snapshot_id})
+
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.SnapshotStatus.CREATING
+        actual_status = snapshot['status']
+        if actual_status != expected_status:
+            msg = (_('Create snapshot aborted, expected snapshot status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_snapshot_error(snapshot)
+            raise exception.InvalidSnapshot(reason=msg)
+
+        try:
+            self.driver.create_snapshot(snapshot=snapshot, volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_snapshot_error(snapshot)
+
+        self.sync_snapshots[snapshot_id] = {
+            'action': 'create',
+            'snapshot': snapshot
+        }
+
+    def delete_snapshot(self, context, snapshot_id):
+        LOG.info(_LI("Delete snapshot started, snapshot:%s"), snapshot_id)
+
+        snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+
+        expected_status = fields.SnapshotStatus.DELETING
+        actual_status = snapshot['status']
+        if actual_status != expected_status:
+            msg = (_('Delete snapshot aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_snapshot_error(snapshot)
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.delete_snapshot(snapshot=snapshot)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_snapshot_error(snapshot)
+
+        self.sync_snapshots[snapshot_id] = {
+            'action': 'delete',
+            'snapshot': snapshot
+        }
+
+    def rollback_snapshot(self, context, snapshot_id):
+        LOG.info(_LI("Rollback snapshot, snapshot_id %s"), snapshot_id)
+
+        snapshot = object.Snapshot.get_by_id(context, snapshot_id)
+        volume_id = snapshot['volume_id']
+        volume = object.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.VolumeStatus.ROLLING_BACK
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Rollback snapshot aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_volume_error(volume)
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.rollback_snapshot(snapshot_id, volume_id)
+        except exception.SGDriverError as err:
+            msg = (_("Rollback snapshot failed, err: %s"), err)
+            LOG.error(msg)
+            raise exception.RollbackFailed(reason=msg)
+
+        self.sync_volumes[volume_id] = {
+            'volume': volume,
+            'action': 'rollback'
         }
