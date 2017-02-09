@@ -37,9 +37,10 @@ class VolumeStatus(BaseSGServiceEnum):
     DISABLED = 'disabled'
     RESTORING_BACKUP = 'restoring_backup'
     ERROR_RESTORING = 'error_restoring'
+    ROLLING_BACK = 'rolling_back'
 
     ALL = (ERROR, ENABLING, ENABLED, DELETED, DISABLING, DISABLED,
-           RESTORING_BACKUP, ERROR_RESTORING)
+           RESTORING_BACKUP, ERROR_RESTORING, ROLLING_BACK)
 
 
 class VolumeStatusField(BaseEnumField):

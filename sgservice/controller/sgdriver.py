@@ -68,12 +68,29 @@ class SGDriver(object):
     def restore_backup(self, **kwargs):
         pass
 
+<<<<<<< HEAD
     @abc.abstractmethod
     def create_snapshot(self, **kwargs):
         pass
 
     @abc.abstractmethod
     def delete_snapshot(self, **kwargs):
+=======
+    def create_snapshot(self, snapshot, volume):
+        # TODO(luobin)
+        pass
+
+    def delete_snapshot(self, snapshot):
+        # TODO(luobin)
+        pass
+
+    def get_snapshot(self, snapshot_id):
+        # TODO(luobin)
+        pass
+
+    def list_snapshots(self):
+        # TODO(luobin)
+>>>>>>> 2adcbdb... Implement snapshot-api
         pass
 
     @abc.abstractmethod
