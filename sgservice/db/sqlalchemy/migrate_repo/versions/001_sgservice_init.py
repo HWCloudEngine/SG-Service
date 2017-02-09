@@ -93,6 +93,7 @@ def define_tables(meta):
         Column('replication_zone', String(255)),
         Column('replication_id', String(36), ForeignKey('replications.id'),
                nullable=True),
+        Column('peer_volume', String(36), nullable=True),
         Column('replicate_status', String(64)),
         Column('replicate_mode', String(64)),
         Column('access_mode', String(64)),
