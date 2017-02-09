@@ -117,6 +117,7 @@ def define_tables(meta):
                nullable=True),
         Column('destination', String(64)),
         Column('availability_zone', String(255)),
+        Column('replication_zone', String(255)),
         Column('volume_id', String(36), ForeignKey('volumes.id'),
                nullable=False),
         mysql_engine='InnoDB',
@@ -140,6 +141,7 @@ def define_tables(meta):
         Column('type', String(64)),
         Column('destination', String(64)),
         Column('availability_zone', String(255)),
+        Column('replication_zone', String(255)),
         Column('volume_id', String(36), nullable=False),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
