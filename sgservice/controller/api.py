@@ -378,3 +378,143 @@ class API(base.Base):
 
         LOG.info(_LI("Get all backups completed successfully."))
         return backups
+
+    def get_snapshot(self, context, snapshot_id):
+        try:
+            snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+            LOG.info(_LI("Snapshot info retrieved successfully."),
+                     resource=snapshot)
+            return snapshot
+        except Exception:
+            raise exception.SnapshotNotFound(snapshot_id)
+
+    def create_snapshot(self, context, name, description, volume,
+                        checkpoint_id=None):
+        if volume['status'] not in ['enabled', 'in-use']:
+            msg = (_('Volume to create snapshot should be enabled or in-use, '
+                     'but current status is "%s".') % volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        snapshot = None
+        replicate_mode = volume['replicate_mode']
+        if checkpoint_id and replicate_mode == 'slave':
+            destination = 'remote'
+        else:
+            destination = 'local'
+        try:
+
+            kwargs = {
+                'use_id': context.user_id,
+                'project_id': context.project_id,
+                'display_name': name,
+                'display_description': description,
+                'volume_id': volume['id'],
+                'status': fields.SnapshotStatus.CREATING,
+                'checkpoint_id': checkpoint_id,
+                'destination': destination,
+                'availability_zone': volume['availability_zone'],
+                'replication_zone': volume['replication_zone']
+            }
+            snapshot = objects.Snapshot(context, **kwargs)
+            snapshot.create()
+            snapshot.save()
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                if snapshot and 'id' in snapshot:
+                    snapshot.destroy()
+
+        self.controller_rpcapi.create_snapshot(context, snapshot, volume)
+        return snapshot
+
+    def delete_snapshot(self, context, snapshot):
+        if snapshot['status'] not in [fields.SnapshotStatus.AVAILABLE,
+                                      fields.SnapshotStatus.ERROR]:
+            msg = _('Snapshot to be deleted must be available or error')
+            raise exception.InvalidSnapshot(reason=msg)
+
+        self.db.snapshot_update(context, snapshot['id'],
+                                {'status': fields.SnapshotStatus.DELETING})
+        self.controller_rpcapi.delete_snapshot(context, snapshot)
+
+    def get_all_snapshots(self, context, marker=None, limit=None,
+                          sort_keys=None, sort_dirs=None, filters=None,
+                          offset=None):
+        if filters is None:
+            filters = {}
+
+        all_tenants = utils.get_bool_params('all_tenants', filters)
+
+        try:
+            if limit is not None:
+                limit = int(limit)
+                if limit < 0:
+                    msg = _('limit param must be positive')
+                    raise exception.InvalidInput(reason=msg)
+        except ValueError:
+            msg = _('limit param must be an integer')
+            raise exception.InvalidInput(reason=msg)
+
+        if filters:
+            LOG.debug("Searching by: %s.", six.text_type(filters))
+
+        if context.is_admin and all_tenants:
+            # Need to remove all_tenants to pass the filtering below.
+            del filters['all_tenants']
+            snapshots = objects.SnapshotList.get_all(context, marker, limit,
+                                                     sort_keys=sort_keys,
+                                                     sort_dirs=sort_dirs,
+                                                     filters=filters,
+                                                     offset=offset)
+        else:
+            snapshots = objects.SnapshotList.get_all_by_project(
+                context, context.project_id, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs, filters=filters,
+                offset=offset)
+
+        LOG.info(_LI("Get all snapshots completed successfully."))
+        return snapshots
+
+    def rollback_snapshot(self, context, snapshot):
+        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
+
+        if volume["status"] not in [fields.VolumeStatus.ENABLED,
+                                    fields.VolumeStatus.IN_USE]:
+            msg = (_('Volume to rollback snapshot should be enabled or '
+                     'in-use, but current status is "%s".') % volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        volume.update({"status": fields.VolumeStatus.ROLLING_BACK})
+        volume.save()
+        self.controller_rpcapi.rollback_snapshot(context, snapshot, volume)
+        rollback = {
+            'volume_id': volume['id'],
+            'volume_status': volume['status'],
+            'id': snapshot['id'],
+        }
+        return rollback
+
+    def create_volume(self, context, snapshot, volume_type=None,
+                      availability_zone=None, name=None,
+                      description=None):
+        snapshot_availability_zone = snapshot['availability_zone']
+        if availability_zone is None:
+            availability_zone = snapshot_availability_zone
+        if availability_zone != snapshot_availability_zone:
+            msg = _("The new volume and snapshot must in same "
+                    "availability-zone")
+            LOG.error(msg)
+            raise exception.InvalidInput(reason=msg)
+
+        cinder_client = ClientFactory.create_client("cinder", context)
+        try:
+            cinder_volume = cinder_client.volumes.create(
+                name=name,
+                description=description,
+                volume_type=volume_type,
+                availability_zone=availability_zone)
+        except Exception as err:
+            msg = (_("Using cinder-client to create new volume failed, "
+                     "err: %s."), err)
+            LOG.error(msg)
+            raise exception.CinderClientError(reason=msg)
+        self.controller_rpcapi.create_volume(context, snapshot, cinder_volume)
