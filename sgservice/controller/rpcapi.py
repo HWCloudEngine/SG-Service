@@ -68,3 +68,16 @@ class ControllerAPI(object):
         cctxt = self.client.prepare(version='1.0')
         return cctxt.call(ctxt, 'initialize_connection', volume_id=volume.id,
                           connector=connector)
+
+    def create_backup(self, ctxt, backup):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'create_backup', backup_id=backup.id)
+
+    def delete_backup(self, ctxt, backup):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'delete_backup', backup_id=backup.id)
+
+    def restore_backup(self, ctxt, backup, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'restore_backup', backup_id=backup.id,
+                          volume_id=volume.id)
