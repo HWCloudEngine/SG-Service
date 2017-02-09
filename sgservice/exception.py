@@ -258,3 +258,11 @@ class DetachSGFailed(SGServiceException):
 
 class RestoreBackupFailed(SGServiceException):
     message = _("Restore backup failed: %(reason)s")
+
+
+class CinderClientError(SGServiceException):
+    message = _("Call to cinder client failed: %(reason)s")
+
+
+class CreateVolumeFailed(SGServiceException):
+    message = _('Create volume from snapshot failed: %(reason)s')
