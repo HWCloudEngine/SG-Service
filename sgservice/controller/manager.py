@@ -87,6 +87,7 @@ class ControllerManager(manager.Manager):
 
         self.backups = {}  # used to sync backups from sg-client
         self.snapshots = {}  # used to sync snapshots from sg-client
+        self.volumes = {}  # used to sync volumes from sg-client
 
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
@@ -523,4 +524,178 @@ class ControllerManager(manager.Manager):
         self.snapshots[snapshot_id] = {
             'id': snapshot_id,
             'action': 'delete'
+        }
+
+    def create_replicate(self, context, volume_id):
+        LOG.info(_LI("Create replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.ENABLING
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Create replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.create_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'create_replicate'
+        }
+
+    def enable_replicate(self, context, volume_id):
+        LOG.info(_LI("Enable replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.ENABLING
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Enable replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.enable_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'enable_replicate'
+        }
+
+    def disable_replicate(self, context, volume_id):
+        LOG.info(_LI("Disable replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.DISABLING
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Disable replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.enable_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'disable_replicate'
+        }
+
+    def delete_replicate(self, context, volume_id):
+        LOG.info(_LI("Delete replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.DELETING
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Delete replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.enable_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'delete_replicate'
+        }
+
+    def failover_replicate(self, context, volume_id):
+        LOG.info(_LI("Failover replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.FAILING_OVER
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Failover replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.enable_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'failover_replicate'
+        }
+
+    def reverse_replicate(self, context, volume_id):
+        LOG.info(_LI("Reverse replicate started, volume:%s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.ReplicateStatus.REVERSING
+        actual_status = volume['replicate_status']
+        if actual_status != expected_status:
+            msg = (_('Reverse replicate aborted, expected replicate status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self.db.volume_update(
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            self.driver.enable_replicate(volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self.db.volume_update(
+                    context, volume_id,
+                    {'replicate_status': fields.ReplicateStatus.ERROR})
+
+        self.volumes[volume_id] = {
+            'id': 'volume_id',
+            'action': 'reverse_replicate'
         }
