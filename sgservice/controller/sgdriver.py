@@ -129,10 +129,20 @@ class SGDriver(object):
         # TODO(luobin)
         pass
 
-    def create_snapshot(self, **kwargs):
+    def create_snapshot(self, snapshot, volume):
+        # TODO(luobin)
         pass
 
-    def delete_snapshot(self, **kwargs):
+    def delete_snapshot(self, snapshot):
+        # TODO(luobin)
+        pass
+
+    def get_snapshot(self, snapshot_id):
+        # TODO(luobin)
+        pass
+
+    def list_snapshots(self):
+        # TODO(luobin)
         pass
 
     def enable_replicate(self, **kwargs):
