@@ -14,6 +14,7 @@
 Controller Service
 """
 
+from eventlet import greenthread
 import six
 
 from oslo_config import cfg
@@ -22,6 +23,7 @@ import oslo_messaging as messaging
 from oslo_serialization import jsonutils
 from oslo_service import loopingcall
 from oslo_utils import importutils
+from oslo_utils import excutils
 from oslo_utils import uuidutils
 
 from sgservice.controller.client_factory import ClientFactory
@@ -38,7 +40,9 @@ controller_manager_opts = [
                help='sync resources status interval'),
     cfg.StrOpt('sg_driver',
                default='sgservice.controller.drivers.iscsi.ISCSISGDriver',
-               help='The class name of storage gateway driver')
+               help='The class name of storage gateway driver'),
+    cfg.StrOpt('sync_attempts',
+               default=10)
 ]
 
 sg_client_opts = [
@@ -77,137 +81,99 @@ class ControllerManager(manager.Manager):
         driver_class = CONF.sg_driver
         self.driver = importutils.import_object(driver_class)
 
-        self.enable_volumes = {}
-        sync_enable_volume_loop = loopingcall.FixedIntervalLoopingCall(
-            self._sync_enable_volume)
-        sync_enable_volume_loop.start(interval=self.sync_status_interval,
-                                      initial_delay=self.sync_status_interval)
-
-        self.disable_volumes = {}
-        sync_disable_volume_loop = loopingcall.FixedIntervalLoopingCall(
-            self._sync_disable_volume)
-        sync_disable_volume_loop.start(interval=self.sync_status_interval,
-                                       initial_delay=self.sync_status_interval)
+        self.sync_backups = {}  # used to sync backups from sg-client
 
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
         LOG.info(_LI("Starting controller service"))
 
-    def _sync_enable_volume(self):
-        for volume_id, volume_info in self.enable_volumes.items():
-            cinder_client = volume_info['cinder_client']
-            sg_volume = volume_info['sg_volume']
-            old_devices = volume_info['devices']
-            try:
-                cinder_volume = cinder_client.volumes.get(volume_id)
-                if cinder_volume.status == 'in-use':
-                    LOG.info(_("Attach cinder volume '%s' to SG succeed."),
-                             volume_id)
-                    new_devices = self.driver.list_devices()
-                    device = [d for d in new_devices if d not in old_devices]
-                    if len(device) == 0:
-                        msg = _("Get volume device failed")
-                        LOG.error(msg)
-                        sg_volume.update(
-                            {'status': fields.VolumeStatus.ERROR})
-                        sg_volume.save()
-                    else:
-                        driver_data = self.driver.enable_sg(sg_volume,
-                                                            device[0])
-                        sg_volume.update(
-                            {'status': fields.VolumeStatus.ENABLED,
-                             'driver_data': jsonutils.dumps(driver_data)})
-                        sg_volume.save()
-                    self.enable_volumes.pop(volume_id)
-                elif cinder_volume.status == 'attaching':
-                    continue
-                else:
-                    LOG.info(_("Attach cinder volume '%s' to SG failed."),
-                             volume_id)
-                    sg_volume.update(
-                        {'status': fields.VolumeStatus.ERROR})
-                    self.enable_volumes.pop(volume_id)
-            except exception.SGDriverError as err:
-                LOG.error(err)
-                sg_volume.update({'status': fields.VolumeStatus.ERROR})
-                sg_volume.save()
-                self.enable_volumes.pop(volume_id)
-            except Exception:
-                LOG.error(_LE("Sync cinder volume '%s' status failed."),
-                          volume_id)
-                sg_volume.destroy()
-                self.enable_volumes.pop(volume_id)
-
-    def _sync_disable_volume(self):
-        for volume_id, volume_info in self.disable_volumes.items():
-            cinder_client = volume_info['cinder_client']
-            sg_volume = volume_info['sg_volume']
-            try:
-                cinder_volume = cinder_client.volumes.get(volume_id)
-                if cinder_volume.status == 'available':
-                    LOG.info(_("Detach cinder volume '%s' from SG succeed."),
-                             volume_id)
-                    self.driver.disable_sg(volume_id)
-                    sg_volume.destroy()
-                    self.disable_volumes.pop(volume_id)
-                elif cinder_volume.status == 'detaching':
-                    continue
-                else:
-                    LOG.info(_("Disable cinder volume '%s' SG failed."),
-                             volume_id)
-                    if cinder_volume.status == 'in-use':
-                        sg_volume.update(
-                            {'status': fields.VolumeStatus.ENABLED})
-                    else:
-                        sg_volume.update({'status': fields.VolumeStatus.ERROR})
-                    sg_volume.save()
-                    self.disable_volumes.pop(volume_id)
-            except exception.SGDriverError as err:
-                LOG.error(err)
-                sg_volume.update({'status': fields.VolumeStatus.ERROR})
-                sg_volume.save()
-                self.disable_volumes.pop(volume_id)
-            except Exception:
-                LOG.error(_LE("Sync cinder volume '%s' status failed."),
-                          volume_id)
-                sg_volume.update({'status': fields.VolumeStatus.ERROR})
-                sg_volume.save()
-                self.disable_volumes.pop(volume_id)
-
-    def enable_sg(self, context, volume_id):
-        LOG.info(_LI("Enable-SG for this volume with id %s"), volume_id)
-
-        volume = objects.Volume.get_by_id(context, volume_id)
-        volume.update({'replication_zone': CONF.sg_client.replication_zone})
-        volume.save()
-
-        nova_client = ClientFactory.create_client('nova', context)
+    def _wait_volume_status(self, context, volume_id, excepted_status):
+        """ Sync volume status to be excepted_status
+        """
         cinder_client = ClientFactory.create_client('cinder', context)
+        c_volume = cinder_client.volumes.get(volume_id)
+        retry_attempts = CONF.retry_attempts
+        while c_volume.status != excepted_status and retry_attempts != 0:
+            greenthread.sleep(CONF.sync_status_interval)
+            c_volume = cinder_client.volumes.get(volume_id)
+            retry_attempts -= 1
+        if retry_attempts == 0:
+            msg = _("Sync volume to timeout.")
+            LOG.error(msg)
+            raise exception.SyncVolumeFailed(reason=msg)
 
+    def _attach_volume_to_sg(self, context, volume_id):
+        """ Attach volume to sg-client
+        """
+        nova_client = ClientFactory.create_client('nova', context)
         try:
-            devices = self.driver.list_devices()
             nova_client.volumes.create_server_volume(
                 CONF.sg_client.sg_client_instance, volume_id)
         except Exception as err:
             LOG.error(err)
+            raise exception.AttachSGFailed(reason=err)
+
+    def _get_attach_device(self, old_devices):
+        # get attached device
+        try:
+            new_devices = self.driver.list_devices()
+            device = [d for d in new_devices if d not in old_devices]
+            if len(device) == 0:
+                msg = _("Get volume device failed")
+                LOG.error(msg)
+                raise exception.AttachSGFailed(reason=msg)
+            else:
+                return device[0]
+        except exception.SGDriverError as err:
+            msg = (_("call to sg-client failed, err: %s."), err)
+            LOG.error(msg)
+            raise err
+
+    def _detach_volume_from_sg(self, context, volume_id):
+        # detach volume from sg-client
+        nova_client = ClientFactory.create_client('nova', context)
+        try:
+            nova_client.volumes.delete_server_volume(
+                CONF.sg_client.sg_client_instance, volume_id)
+        except Exception as err:
+            LOG.error(err)
+            raise exception.DetachSGFailed(reason=err)
+
+    @utils.synchronized(CONF.sg_client.sg_client_instance)
+    def enable_sg(self, context, volume_id):
+        LOG.info(_LI("Enable-SG for this volume with id %s"), volume_id)
+        # update replication_zone
+        volume = objects.Volume.get_by_id(context, volume_id)
+        volume.update({'replication_zone': CONF.sg_client.replication_zone})
+        volume.save()
+
+        try:
+            old_devices = self.driver.list_devices()
+            self._attach_volume_to_sg(context, volume_id)
+            self._wait_volume_status(context, volume_id, "in-use")
+            device = self._get_attach_device(old_devices)
+            driver_data = self.driver.enable_sg(volume, device)
+
+            volume.update({'status': fields.VolumeStatus.ENABLED,
+                           'driver_data': jsonutils.dumps(driver_data)})
+            volume.save()
+        except Exception as err:
+            msg = (_("Enable sg failed, err: %s."), err)
+            LOG.error(msg)
             volume.update({'status': fields.VolumeStatus.ERROR})
-            raise exception.EnableSGFailed(reason=err)
+            volume.save()
+            raise exception.EnableSGFailed(reason=msg)
 
-        self.enable_volumes[volume_id] = {
-            'devices': devices,
-            'cinder_client': cinder_client,
-            'sg_volume': volume
-        }
-
+    @utils.synchronized(CONF.sg_client.sg_client_instance)
     def disable_sg(self, context, volume_id, cascade=False):
         LOG.info(_LI("Disable-SG for this volume with id %s"), volume_id)
 
         volume = objects.Volume.get_by_id(context, volume_id)
+        # delete snapshots if cascade
         if cascade:
             LOG.info("Disable SG cascade")
             snapshots = objects.SnapshotList.get_all_by_volume(context,
                                                                volume_id)
-
             for s in snapshots:
                 if s.status != 'deleting':
                     msg = (_("Snapshot '%(id)s' was found in state "
@@ -217,20 +183,17 @@ class ControllerManager(manager.Manager):
                     raise exception.InvalidSnapshot(reason=msg)
                 self.delete_snapshot(context, s)
 
-        nova_client = ClientFactory.create_client('nova', context)
-        cinder_client = ClientFactory.create_client('cinder', context)
         try:
-            nova_client.volumes.delete_server_volume(
-                CONF.sg_client.sg_client_instance, volume_id)
-        except Exception as err:
-            LOG.error(err)
-            raise exception.EnableSGFailed(reason=err)
-
-        self.disable_volumes[volume_id] = {
-            'cinder_client': cinder_client,
-            'sg_volume': volume,
-            'nova_client': nova_client,
-        }
+            self._detach_volume_from_sg(context, volume_id)
+            self._wait_volume_status(context, volume_id, "available")
+            self.driver.disable_sg(volume_id)
+            volume.destroy()
+        except exception.SGDriverError as err:
+            msg = (_("Disable sg failed, err: %s."), err)
+            LOG.error(msg)
+            volume.update({'status': fields.VolumeStatus.ERROR})
+            volume.save()
+            raise exception.DisableSGFailed(reason=msg)
 
     def attach_volume(self, context, volume_id, instance_uuid, host_name,
                       mountpoint, mode):
@@ -336,3 +299,120 @@ class ControllerManager(manager.Manager):
 
         LOG.info(_LI("Initialize connection completed successfully."))
         return conn_info
+
+    def _update_backup_error(self, backup):
+        backup.update({'status': fields.BackupStatus.ERROR})
+        backup.save()
+
+    def create_backup(self, context, backup_id):
+        backup = objects.Backup.get_by_id(context, backup_id)
+        volume_id = backup.volume_id
+        LOG.info(_LI("Create backup started, backup:%(backup_id)s, volume: "
+                     "%(volume_id)s"),
+                 {'volume_id': volume_id, 'backup_id': backup_id})
+
+        volume = objects.Volume.get_by_id(context, volume_id)
+        previous_status = volume.get('previous-status', None)
+
+        expected_status = 'backing-up'
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Create backup aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            self.db.volume_update(context, volume_id,
+                                  {'status': previous_status,
+                                   'previous_status': 'error_backing_up'})
+            raise exception.InvalidVolume(reason=msg)
+
+        expected_status = fields.BackupStatus.CREATING
+        actual_status = backup['status']
+        if actual_status != expected_status:
+            msg = (_('Create backup aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            self.db.volume_update(context, volume_id,
+                                  {'status': previous_status,
+                                   'previous_status': 'error_backing_up'})
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.create_backup(backup=backup, volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_backup_error(backup)
+                self.db.volume_update(context, volume_id,
+                                      {'status': previous_status,
+                                       'previous_status': 'error_backing_up'})
+
+        self.backups[backup_id] = {
+            'id': backup_id,
+            'action': 'create'
+        }
+
+    def delete_backup(self, context, backup_id):
+        LOG.info(_LI("Delete backup started, backup:%s"), backup_id)
+
+        backup = objects.Backup.get_by_id(context, backup_id)
+
+        expected_status = fields.BackupStatus.DELETING
+        actual_status = backup['status']
+        if actual_status != expected_status:
+            msg = (_('Delete backup aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.delete_backup(backup=backup)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_backup_error(backup)
+
+        self.backups[backup_id] = {
+            'id': backup_id,
+            'action': 'delete'
+        }
+
+    @utils.synchronized(CONF.sg_client.sg_client_instance)
+    def restore_backup(self, context, backup_id, volume_id):
+        LOG.info(_LI("Restore backup started, backup:%(backup_id)s, volume: "
+                     "%(volume_id)s"),
+                 {'volume_id': volume_id, 'backup_id': backup_id})
+
+        # check backup status
+        backup = objects.Backup.get_by_id(context, backup_id)
+        expected_status = 'restoring'
+        actual_status = backup['status']
+        if actual_status != expected_status:
+            msg = (_('Restore backup aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_backup_error(backup)
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            old_devices = self.driver.list_devices()
+            self._attach_volume_to_sg(context, volume_id)
+            self._wait_volume_status(context, volume_id, "in-use")
+            device = self._get_attach_device(old_devices)
+            self.driver.restore_backup(backup_id, volume_id, device)
+        except Exception as err:
+            msg = (_("Restore backup failed, err: %s."), err)
+            LOG.error(msg)
+            self.db.backup_update(
+                context, backup_id,
+                {'status': fields.BackupStatus.AVAILABLE})
+            raise exception.RestoreBackupFailed(reason=msg)
+
+        self.sync_backups[backup_id] = {
+            'id': backup_id,
+            'volume_id': volume_id
+        }
