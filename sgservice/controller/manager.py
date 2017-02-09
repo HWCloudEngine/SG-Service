@@ -86,6 +86,7 @@ class ControllerManager(manager.Manager):
                                        initial_delay=self.sync_status_interval)
 
         self.backups = {}  # used to sync backups from sg-client
+        self.snapshots = {}  # used to sync snapshots from sg-client
 
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
@@ -458,3 +459,68 @@ class ControllerManager(manager.Manager):
                 self.db.volume_update(
                     context, volume_id,
                     {'status': fields.VolumeStatus.ERROR_RESTORING})
+
+        self.backups[backup_id] = {
+            'id': backup_id,
+            'action': 'restore'
+        }
+
+    def _update_snapshot_error(self, snapshot):
+        snapshot.update({'status': fields.SnapshotStatus.ERROR})
+        snapshot.save()
+
+    def create_snapshot(self, context, snapshot_id):
+        snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+        volume_id = snapshot.volume_id
+        LOG.info(_LI("Create snapshot started, snapshot:%(snapshot_id)s, "
+                     "volume: %(volume_id)s"),
+                 {'volume_id': volume_id, 'snapshot_id': snapshot_id})
+
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.SnapshotStatus.CREATING
+        actual_status = snapshot['status']
+        if actual_status != expected_status:
+            msg = (_('Create snapshot aborted, expected snapshot status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_snapshot_error(snapshot)
+            raise exception.InvalidSnapshot(reason=msg)
+
+        try:
+            self.driver.create_snapshot(snapshot=snapshot, volume=volume)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_snapshot_error(snapshot)
+
+        self.snapshots[snapshot_id] = {
+            'id': snapshot_id,
+            'action': 'create'
+        }
+
+    def delete_snapshot(self, context, snapshot_id):
+        LOG.info(_LI("Delete snapshot started, snapshot:%s"), snapshot_id)
+
+        snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+
+        expected_status = fields.SnapshotStatus.DELETING
+        actual_status = snapshot['status']
+        if actual_status != expected_status:
+            msg = (_('Delete snapshot aborted, expected backup status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_snapshot_error(snapshot)
+            raise exception.InvalidBackup(reason=msg)
+
+        try:
+            self.driver.delete_snapshot(snapshot=snapshot)
+        except exception.SGDriverError:
+            with excutils.save_and_reraise_exception():
+                self._update_snapshot_error(snapshot)
+
+        self.snapshots[snapshot_id] = {
+            'id': snapshot_id,
+            'action': 'delete'
+        }

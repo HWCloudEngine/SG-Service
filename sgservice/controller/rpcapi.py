@@ -81,3 +81,11 @@ class ControllerAPI(object):
         cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(ctxt, 'restore_backup', backup_id=backup.id,
                           volume_id=volume.id)
+
+    def create_snapshot(self, ctxt, snapshot):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'create_snapshot', snapshot_id=snapshot.id)
+
+    def delete_snapshot(self, ctxt, snapshot):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
