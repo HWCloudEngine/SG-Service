@@ -131,6 +131,7 @@ class Volume(BASE, SGServiceBase):
     replication_zone = Column(String(255))
     replication_id = Column(String(36), ForeignKey("replications.id"),
                             nullable=True)
+    peer_volume = Column(String(36), nullable=True)
     replicate_status = Column(String(64))
     replicate_mode = Column(String(64))
     access_mode = Column(String(64))

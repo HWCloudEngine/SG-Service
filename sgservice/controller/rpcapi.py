@@ -90,3 +90,27 @@ class ControllerAPI(object):
     def delete_snapshot(self, ctxt, snapshot):
         cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
+
+    def create_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'create_replicate', volume_id=volume.id)
+
+    def enable_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'enable_replicate', volume_id=volume.id)
+
+    def disable_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'disable_replicate', volume_id=volume.id)
+
+    def delete_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'delete_replicate', volume_id=volume.id)
+
+    def failover_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'failover_replicate', volume_id=volume.id)
+
+    def reverse_replicate(self, ctxt, volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'reverse_replicate', volume_id=volume.id)

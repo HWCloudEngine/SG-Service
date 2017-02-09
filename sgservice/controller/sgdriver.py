@@ -145,17 +145,26 @@ class SGDriver(object):
         # TODO(luobin)
         pass
 
-    def enable_replicate(self, **kwargs):
+    def create_replicate(self, volume):
+        # TODO(luobin)
         pass
 
-    def disable_replicate(self, **kwarg):
+    def enable_replicate(self, volume):
+        # TODO(luobin)
         pass
 
-    def failover_replicate(self, **kwargs):
+    def disable_replicate(self, volume):
+        # TODO(luobin)
         pass
 
-    def delete_replicate(self, **kwargs):
+    def failover_replicate(self, volume):
+        # TODO(luobin)
         pass
 
-    def reverse_replicate(self, **kwargs):
+    def delete_replicate(self, volume):
+        # TODO(luobin)
+        pass
+
+    def reverse_replicate(self, volume):
+        # TODO(luobin)
         pass

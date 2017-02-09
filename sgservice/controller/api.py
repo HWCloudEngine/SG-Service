@@ -465,3 +465,271 @@ class API(base.Base):
 
         LOG.info(_LI("Get all snapshots completed successfully."))
         return snapshots
+
+    def get_replication(self, context, replication_id):
+        try:
+            replication = objects.Replication.get_by_id(context,
+                                                        replication_id)
+            LOG.info(_LI("Replication info retrieved successfully."),
+                     resource=replication)
+            return replication
+        except Exception:
+            raise exception.SnapshotNotFound(replication_id)
+
+    def create_replication(self, context, name, description, master_volume,
+                           slave_volume):
+        if master_volume['status'] not in ['enabled', 'in-use']:
+            msg = (_('Master volume of a replication should be enabled '
+                     'or in-use, but current status is "%s".') %
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        if slave_volume['status'] not in ['enabled']:
+            msg = (_('Slave volume of a replication should be enabled '
+                     'or in-use, but current status is "%s".') %
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        replication = None
+        try:
+            kwargs = {
+                'use_id': context.user_id,
+                'project_id': context.project_id,
+                'display_name': name,
+                'display_description': description,
+                'master_volume': master_volume['id'],
+                'slave_volume': slave_volume['id'],
+                'status': fields.ReplicateStatus.CREATING,
+            }
+            replication = objects.Replication(context, **kwargs)
+            replication.create()
+            replication.save()
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                if replication and 'id' in replication:
+                    replication.destroy()
+
+        try:
+            self.create_replicate(context, master_volume, replication['id'],
+                                  'master', slave_volume['id'])
+            self.create_replicate(context, slave_volume, replication['id'],
+                                  'slave', master_volume['id'])
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                replication.destroy()
+
+        return replication
+
+    def delete_replication(self, context, replication):
+        if replication['status'] not in [fields.ReplicationStatus.DISABLED]:
+            msg = _('Replication to be deleted must be disabled')
+            raise exception.InvalidReplication(reason=msg)
+
+        self.db.replication_update(
+            context, replication['id'],
+            {'status': fields.ReplicationStatus.DELETING})
+
+        master_volume_id = replication['master_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume_id = replication['salve_volume']
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
+        self.delete_replicate(context, master_volume)
+        self.delete_replicate(context, slave_volume)
+
+    def get_all_replications(self, context, marker=None, limit=None,
+                             sort_keys=None, sort_dirs=None, filters=None,
+                             offset=None):
+        if filters is None:
+            filters = {}
+
+        all_tenants = utils.get_bool_params('all_tenants', filters)
+
+        try:
+            if limit is not None:
+                limit = int(limit)
+                if limit < 0:
+                    msg = _('limit param must be positive')
+                    raise exception.InvalidInput(reason=msg)
+        except ValueError:
+            msg = _('limit param must be an integer')
+            raise exception.InvalidInput(reason=msg)
+
+        if filters:
+            LOG.debug("Searching by: %s.", six.text_type(filters))
+
+        if context.is_admin and all_tenants:
+            # Need to remove all_tenants to pass the filtering below.
+            del filters['all_tenants']
+            replications = objects.ReplicationList.get_all(
+                context, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
+        else:
+            replications = objects.ReplicationList.get_all_by_project(
+                context, context.project_id, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
+
+        LOG.info(_LI("Get all replications completed successfully."))
+        return replications
+
+    def enable_replication(self, context, replication):
+        if replication['status'] not in [fields.ReplicationStatus.DISABLED,
+                                         fields.ReplicationStatus.FAILED_OVER]:
+            msg = _('Replication to be enabled must be disabled or '
+                    'failed-over')
+            raise exception.InvalidReplication(reason=msg)
+
+        self.db.replication_update(
+            context, replication['id'],
+            {'status': fields.ReplicationStatus.ENABLING})
+
+        master_volume_id = replication['master_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume_id = replication['salve_volume']
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
+        self.enable_replicate(context, master_volume)
+        self.enable_replicate(context, slave_volume)
+
+    def disable_replication(self, context, replication):
+        if replication['status'] not in [fields.ReplicationStatus.ENABLED,
+                                         fields.ReplicationStatus.FAILED_OVER]:
+            msg = _('Replication to be disabled must be enabled or '
+                    'failed-over')
+            raise exception.InvalidReplication(reason=msg)
+
+        self.db.replication_update(
+            context, replication['id'],
+            {'status': fields.ReplicationStatus.DISABLING})
+
+        master_volume_id = replication['master_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume_id = replication['salve_volume']
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
+        self.disable_replicate(context, master_volume)
+        self.disable_replicate(context, slave_volume)
+
+    def failover_replication(self, context, replication):
+        if replication['status'] not in [fields.ReplicationStatus.ENABLED]:
+            msg = _('Replication to be failed-over must be enabled')
+            raise exception.InvalidReplication(reason=msg)
+
+        self.db.replication_update(
+            context, replication['id'],
+            {'status': fields.ReplicationStatus.FAILING_OVER})
+
+        master_volume_id = replication['master_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume_id = replication['salve_volume']
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
+        self.failover_replicate(context, master_volume)
+        self.failover_replicate(context, slave_volume)
+
+    def reverse_replication(self, context, replication):
+        if replication['status'] not in [fields.ReplicationStatus.FAILED_OVER]:
+            msg = _('Replication to be reversed must be failed-over')
+            raise exception.InvalidReplication(reason=msg)
+
+        self.db.replication_update(
+            context, replication['id'],
+            {'status': fields.ReplicationStatus.REVERSING})
+
+        master_volume_id = replication['master_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume_id = replication['salve_volume']
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
+        self.reverse_replicate(context, master_volume)
+        self.reverse_replicate(context, slave_volume)
+
+    def create_replicate(self, context, volume, mode, replication_id,
+                         peer_volume):
+        if volume['replicate_status'] is not None:
+            msg = (_('Replicate-status of disable-replicate volume must '
+                     'be enabled failed-over, but current status is "%s".') %
+                   volume['replicate_status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        if mode == 'master' and volume['status'] not in ['enabled', 'in-use']:
+            msg = (_('Master volume of a replication should be enabled '
+                     'or in-use, but current status is "%s".') %
+                   volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        elif mode == 'slave' and volume['status'] not in ['enabled']:
+            msg = (_('Slave volume of a replication should be enabled, '
+                     'but current status is "%s".') %
+                   volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        access_mode = 'rw' if mode == 'master' else 'ro'
+        self.db.volume_update(
+            context, volume['id'],
+            {'replicate_status': fields.ReplicateStatus.ENABLING,
+             'replication_id': replication_id,
+             'replicate_mode': mode,
+             'peer_volume': peer_volume,
+             'access_mode': access_mode})
+
+        self.controller_rpcapi.create_replicate(context, volume)
+        return volume
+
+    def disable_replicate(self, context, volume):
+        if volume['replicate_status'] not in ['enabled', 'failed-over']:
+            msg = (_('Replicate-status of disable-replicate volume must be '
+                     'enabled or failed-over, but current status is "%s".') %
+                   volume['replicate_status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        self.db.volume_update(
+            context, volume['id'],
+            {'replicate_status': fields.ReplicateStatus.DISABLING})
+
+        self.controller_rpcapi.disable_replicate(context, volume)
+        return volume
+
+    def delete_replicate(self, context, volume):
+        if volume['replicate_status'] not in ['disabled', 'failed-over',
+                                              'error']:
+            msg = (_('Replicate-status of delete-replicate volume must be '
+                     'disabled or failed-over or error, but current status '
+                     'is "%s".') %
+                   volume['replicate_status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        self.db.volume_update(
+            context, volume['id'],
+            {'replicate_status': fields.ReplicateStatus.DELETING})
+
+        self.controller_rpcapi.delete_replicate(context, volume)
+
+    def failover_replicate(self, context, volume):
+        if volume['replicate_status'] not in ['enabled']:
+            msg = (_('Replicate-status of failover-replicate volume must '
+                     'be enabled, but current status is "%s".') %
+                   volume['replicate_status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        self.db.volume_update(
+            context, volume['id'],
+            {'replicate_status': fields.ReplicateStatus.FAILING_OVER})
+
+        self.controller_rpcapi.failover_replicate(context, volume)
+        return volume
+
+    def reverse_replicate(self, context, volume):
+        if volume['replicate_status'] not in ['failed-over']:
+            msg = (_('Replicate-status of reverse-replicate volume must '
+                     'be failed-over, but current status is "%s".') %
+                   volume['replicate_status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        self.db.volume_update(
+            context, volume['id'],
+            {'replicate_status': fields.ReplicateStatus.REVERSING})
+
+        self.controller_rpcapi.reverse_replicate(context, volume)
+        return volume
