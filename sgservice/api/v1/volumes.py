@@ -291,6 +291,54 @@ class VolumesController(wsgi.Controller):
         self.service_api.detach(context, volume, attachment_id)
         return webob.Response(status_int=202)
 
+    def create(self, req, body):
+        """Creates a new volume from snapshot or checkpoint."""
+        LOG.debug('Create volume from snapshot, request body: %s', body)
+        context = req.environ['sgservice.context']
+        volume = body['volume']
+
+        volume_type = volume.get('volume_type', None)
+        availability_zone = volume.get('availability_zone', None)
+
+        # create from snapshot
+        snapshot_id = volume.get('snapshot_id')
+        if snapshot_id is not None:
+            name = volume.get('name', 'volume-%s' % snapshot_id)
+            description = volume.get('description', name)
+            if not uuidutils.is_uuid_like(snapshot_id):
+                msg = _("Invalid snapshot id provided.")
+                LOG.error(msg)
+                raise exception.InvalidUUID(snapshot_id)
+            snapshot = self.service_api.get_snapshot(context, snapshot_id)
+            self.service_api.create_volume(context, snapshot=snapshot,
+                                           volume_type=volume_type,
+                                           availability_zone=availability_zone,
+                                           description=description,
+                                           name=name)
+            return webob.Response(status_int=202)
+
+        # create from checkpoint
+        checkpoint_id = volume.get('checkpoint_id')
+        if checkpoint_id is not None:
+            name = volume.get('name', 'volume-%s' % checkpoint_id)
+            description = volume.get('description', name)
+            if not uuidutils.is_uuid_like(checkpoint_id):
+                msg = _("Invalid checkpoint id provided.")
+                LOG.error(msg)
+                raise exception.InvalidUUID(checkpoint_id)
+            checkpoint = self.service_api.get_checkpoint(context,
+                                                         checkpoint_id)
+            self.service_api.create_volume(context, checkpoint=checkpoint,
+                                           volume_type=volume_type,
+                                           availability_zone=availability_zone,
+                                           description=description,
+                                           name=name)
+            return webob.Response(status_int=202)
+
+        msg = _('Incorrect request body format, create volume must specified '
+                'a snapshot or checkpoint')
+        raise webob.exc.HTTPBadRequest(explanation=msg)
+
 
 def create_resource():
     return wsgi.Resource(VolumesController())
