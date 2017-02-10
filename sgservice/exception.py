@@ -243,5 +243,10 @@ class InvalidBackup(Invalid):
 class InvalidReplication(Invalid):
     message = _("Invalid replication: %(reason)s")
 
+
+class InvalidCheckpoint(Invalid):
+    message = _("Invalid checkpoint: %(reason)s")
+
+
 class SGDriverError(SGServiceException):
     message = _("SG Driver Error: %(reason)s")

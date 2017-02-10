@@ -70,6 +70,8 @@ def define_tables(meta):
         Column('display_description', String(255)),
         Column('replication_id', String(36), ForeignKey('replications.id'),
                nullable=False),
+        Column('master_snapshot', String(36), nullable=True),
+        Column('slave_snapshot', String(36), nullable=True),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )

@@ -117,3 +117,17 @@ class BackupStatus(BaseSGServiceEnum):
 
 class BackupStatusField(BaseEnumField):
     AUTO_TYPE = BackupStatus()
+
+
+class CheckpointStatus(BaseSGServiceEnum):
+    ERROR = 'error'
+    CREATING = 'creating'
+    AVAILABLE = 'available'
+    DELETING = 'deleting'
+    DELETED = 'deleted'
+
+    ALL = (ERROR, CREATING, AVAILABLE, DELETING, DELETED)
+
+
+class CheckpointStatusField(BaseEnumField):
+    AUTO_TYPE = CheckpointStatus()
