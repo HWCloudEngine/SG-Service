@@ -98,7 +98,8 @@ class Checkpoint(BASE, SGServiceBase):
     display_description = Column(String(255))
     replication_id = Column(String(36), ForeignKey("replications.id"),
                             nullable=True)
-
+    master_snapshot = Column(String(36), nullable=True)
+    slave_snapshot = Column(String(36), nullable=True)
     replication = orm.relationship(
         Replication,
         backref='checkpoints',

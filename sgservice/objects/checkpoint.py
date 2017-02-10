@@ -41,6 +41,8 @@ class Checkpoint(base.SGServicePersistentObject, base.SGServiceObject,
         'display_name': fields.StringField(nullable=True),
         'display_description': fields.StringField(nullable=True),
         'replication_id': fields.UUIDField(nullable=True),
+        'master_snapshot': fields.UUIDField(nullable=True),
+        'slave_snapshot': fields.UUIDField(nullable=True),
 
         'replication': fields.ObjectField('Replication', nullable=True)
     }
