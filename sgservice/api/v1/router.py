@@ -12,6 +12,7 @@
 
 from sgservice.api.openstack import ProjectMapper
 from sgservice.api.v1 import backups
+from sgservice.api.v1 import checkpoints
 from sgservice.api.v1 import replicates
 from sgservice.api.v1 import replications
 from sgservice.api.v1 import snapshots
@@ -46,12 +47,19 @@ class APIRouter(wsgi_common.Router):
         mapper.resource("snapshot", "snapshots",
                         controller=snapshots_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST', 'rollback': 'POST'})
+                        member={'action': 'POST', 'rollback': 'POST',
+                                'create_volume': 'POST'})
 
         backups_resources = backups.create_resource()
         mapper.resource("backup", "backups",
                         controller=backups_resources,
                         collection={'detail': 'GET'},
                         member={'action': 'POST', 'restore': 'POST'})
+
+        checkpoints_resources = checkpoints.create_resource()
+        mapper.resource("checkpoint", "checkpoints",
+                        controller=checkpoints_resources,
+                        collection={'detail': 'GET'},
+                        member={'action': 'POST', 'rollback': 'POST'})
 
         super(APIRouter, self).__init__(mapper)
