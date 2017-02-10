@@ -798,3 +798,75 @@ class ControllerManager(manager.Manager):
             'action': 'reverse_replicate',
             'volume': volume
         }
+
+    def _create_volume_action(self, sync_result, snapshot, volume_id,
+                              mountpoint):
+        if sync_result == 'succeed':
+            try:
+                device = self._get_attach_device(mountpoint)
+                self.driver.create_volume(snapshot['id'], volume_id, device)
+                self.sync_snapshots[snapshot['id']] = {
+                    "action": "create_volume",
+                    "snapshot": snapshot
+                }
+            except Exception:
+                LOG.error('create volume from snapshot failed, snapshot_id: %s'
+                          % snapshot['id'])
+                snapshot.update({'status': fields.SnapshotStatus.AVAILABLE})
+                snapshot.save()
+        else:
+            LOG.error('create volume from snapshot failed, snapshot_id: %s' %
+                      snapshot['id'])
+            snapshot.update({'status': fields.SnapshotStatus.AVAILABLE})
+            snapshot.save()
+
+    def create_volume(self, context, snapshot_id, volume_id):
+        LOG.info(_LI("Create new volume from snapshot, snapshot_id %s"),
+                 snapshot_id)
+        snapshot = object.Snapshot.get_by_id(context, snapshot_id)
+
+        cinder_client = ClientFactory.create_client("cinder", context)
+        retry = CONF.retry_attempts
+        try:
+            cinder_volume = cinder_client.volumes.get(volume_id)
+        except Exception:
+            msg = (_("Get the volume '%s' from cinder failed.") % volume_id)
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
+        while cinder_volume['status'] == 'creating' and retry != 0:
+            greenthread.sleep(CONF.sync_status_interval)
+            try:
+                cinder_volume = cinder_client.volumes.get(volume_id)
+            except Exception:
+                msg = (_("Get the volume '%s' from cinder failed.") %
+                       volume_id)
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
+            retry -= 1
+        if retry == 0:
+            msg = (_("Wait new cinder volume to be available timeout.") %
+                   volume_id)
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
+        if cinder_volume['status'] != 'availabile':
+            msg = (_("Use cinder create a new volume failed.") % volume_id)
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            mountpoint = self._attach_volume_to_sg(context, volume_id)
+        except Exception as err:
+            msg = (_("Create volume from snapshot failed, err: %s."), err)
+            LOG.error(msg)
+            raise exception.RestoreBackupFailed(reason=msg)
+
+        cinder_client = ClientFactory.create_client('cinder', context)
+        self.sync_attach_volumes[volume_id] = {
+            'cinder_client': cinder_client,
+            'action': self._create_voume_action,
+            'action_kwargs': {
+                'snapshot': snapshot,
+                'mountpoint': mountpoint,
+                'volume_id': volume_id
+            }
+        }
