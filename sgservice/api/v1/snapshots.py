@@ -191,6 +191,30 @@ class SnapshotsController(wsgi.Controller):
         rollback = self.service_api.rollback_snapshot(context, snapshot)
         return self._view_builder.rollback_summary(req, rollback)
 
+    def create_volume(self, req, body):
+        """Creates a new volume from snapshot."""
+        LOG.debug('Create volume from snapshot, request body: %s', body)
+        context = req.environ['sgservice.context']
+        volume = body['volume']
+
+        snapshot_id = volume.get('snapshot_id')
+        if snapshot_id is None:
+            msg = _('Incorrect request body format')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if not uuidutils.is_uuid_like(snapshot_id):
+            msg = _("Invalid snapshot id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(snapshot_id)
+
+        volume_type = volume.get('volume_type', None)
+        availability_zone = volume.get('availability_zone', None)
+        name = volume.get('name', 'volume-%s' % snapshot_id)
+        description = volume.get('description', name)
+        snapshot = self.service_api.get_snapshot(context, snapshot_id)
+        self.service_api.create_volume(context, snapshot, volume_type,
+                                       availability_zone, name, description)
+        return webob.Response(status_int=202)
+
     def update(self, req, id, body):
         """Update a snapshot."""
         LOG.info(_LI("Update snapshot with id: %s"), id)
