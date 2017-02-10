@@ -493,6 +493,61 @@ class API(base.Base):
         }
         return rollback
 
+    def create_volume(self, context, snapshot=None, checkpoint=None,
+                      volume_type=None, availability_zone=None, name=None,
+                      description=None):
+        if snapshot is not None:
+            if snapshot['status'] != fields.SnapshotStatus.AVAILABLE:
+                msg = (_('The specified snapshot must be available, '
+                         'but current is %s'), snapshot['status'])
+                raise exception.InvalidSnapshot(reason=msg)
+            snapshot_availability_zone = snapshot['availability_zone']
+            if availability_zone is None:
+                availability_zone = snapshot_availability_zone
+            if availability_zone != snapshot_availability_zone:
+                msg = _("Invalid availability-zone")
+                LOG.error(msg)
+                raise exception.InvalidInput(reason=msg)
+        elif checkpoint is not None:
+            if checkpoint['status'] != fields.CheckpointStatus.AVAILABLE:
+                msg = (_('The specified checkpoint must be available, '
+                         'but current is %s'), checkpoint['status'])
+                raise exception.InvalidCheckpoint(reason=msg)
+            master_snapshot = object.Snapshot.get_by_id(
+                context, checkpoint['master_snapshot'])
+            slave_snapshot = object.Snapshot.get_by_id(
+                context, checkpoint['slave_snapshot'])
+            if availability_zone is None:
+                availability_zone = master_snapshot['availability_zone']
+            if (availability_zone != master_snapshot['availability_zone'] and
+                        availability_zone != slave_snapshot[
+                        'availability_zone']):
+                msg = _("Invalid availability-zone")
+                LOG.error(msg)
+                raise exception.InvalidInput(reason=msg)
+            if availability_zone == master_snapshot['availability_zone']:
+                snapshot = master_snapshot
+            else:
+                snapshot = slave_snapshot
+        else:
+            msg = _("Create volume must specified a snapshot or checkpoint")
+            LOG.error(msg)
+            raise exception.InvalidInput(reason=msg)
+
+        cinder_client = ClientFactory.create_client("cinder", context)
+        try:
+            cinder_volume = cinder_client.volumes.create(
+                name=name,
+                description=description,
+                volume_type=volume_type,
+                availability_zone=availability_zone)
+        except Exception as err:
+            msg = (_("Using cinder-client to create new volume failed, "
+                     "err: %s."), err)
+            LOG.error(msg)
+            raise exception.CinderClientError(reason=msg)
+        self.controller_rpcapi.create_volume(context, snapshot, cinder_volume)
+
     def get_replication(self, context, replication_id):
         try:
             replication = objects.Replication.get_by_id(context,
@@ -804,3 +859,137 @@ class API(base.Base):
 
         self.controller_rpcapi.reverse_replicate(context, volume)
         return volume
+
+    def get_checkpoint(self, context, checkpoint_id):
+        try:
+            checkpoint = objects.Checkpoint.get_by_id(context,
+                                                      checkpoint_id)
+            LOG.info(_LI("Checkpoint info retrieved successfully."),
+                     resource=checkpoint)
+            return checkpoint
+        except Exception:
+            raise exception.SnapshotNotFound(checkpoint_id)
+
+    def delete_checkpoint(self, context, checkpoint):
+        if checkpoint['status'] not in [fields.CheckpointStatus.AVAILABLE]:
+            msg = _('Checkpoint to be deleted must be available')
+            raise exception.InvalidCheckpoint(reason=msg)
+
+        self.db.checkpoint_update(
+            context, checkpoint['id'],
+            {'status': fields.CheckpointStatus.DELETING})
+
+        master_snapshot = objects.Snapshot.get_by_id(
+            context, checkpoint['master_snapshot'])
+        slave_snapshot = objects.Snapshot.get_by_id(
+            context, checkpoint['slave_snapshot'])
+
+        try:
+            self.delete_snapshot(context, master_snapshot)
+            self.delete_snapshot(context, slave_snapshot)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                checkpoint.update({'status': fields.CheckpointStatus.ERROR})
+                checkpoint.save()
+
+    def create_checkpoint(self, context, name, description, replication):
+        if replication['status'] not in [fields.ReplicationStatus.ENABLED]:
+            msg = _('Replication to create checkpoint must be enabled')
+            raise exception.InvalidReplication(reason=msg)
+
+        checkpoint = None
+        try:
+            kwargs = {
+                'use_id': context.user_id,
+                'project_id': context.project_id,
+                'display_name': name,
+                'display_description': description,
+                'replication_id': replication['id'],
+                'status': fields.ReplicateStatus.CREATING,
+            }
+            checkpoint = objects.Checkpoint(context, **kwargs)
+            checkpoint.create()
+            checkpoint.save()
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                if checkpoint and 'id' in checkpoint:
+                    checkpoint.destroy()
+
+        try:
+            slave_volume = objects.Volume.get_by_id(
+                context, replication['slave_volume'])
+            slave_snapshot = self.create_snapshot(context, None, None,
+                                                  slave_volume,
+                                                  checkpoint['id'])
+            master_volume = objects.Volume.get_by_id(
+                context, replication['master_volume'])
+            master_snapshot = self.create_snapshot(context, None, None,
+                                                   master_volume,
+                                                   checkpoint['id'])
+            checkpoint.update({'master_snapshot': master_snapshot['id'],
+                               'slave_snapshot': slave_snapshot['id']})
+            return checkpoint
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                checkpoint.update({'status': fields.CheckpointStatus.ERROR})
+                checkpoint.save()
+
+    def get_all_checkpoints(self, context, marker=None, limit=None,
+                            sort_keys=None, sort_dirs=None, filters=None,
+                            offset=None):
+        if filters is None:
+            filters = {}
+
+        all_tenants = utils.get_bool_params('all_tenants', filters)
+
+        try:
+            if limit is not None:
+                limit = int(limit)
+                if limit < 0:
+                    msg = _('limit param must be positive')
+                    raise exception.InvalidInput(reason=msg)
+        except ValueError:
+            msg = _('limit param must be an integer')
+            raise exception.InvalidInput(reason=msg)
+
+        if filters:
+            LOG.debug("Searching by: %s.", six.text_type(filters))
+
+        if context.is_admin and all_tenants:
+            # Need to remove all_tenants to pass the filtering below.
+            del filters['all_tenants']
+            checkpoints = objects.CheckpointList.get_all(
+                context, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
+        else:
+            checkpoints = objects.CheckpointList.get_all_by_project(
+                context, context.project_id, marker, limit,
+                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
+
+        LOG.info(_LI("Get all checkpoints completed successfully."))
+        return checkpoints
+
+    def rollback_checkpoint(self, context, checkpoint):
+        master_snapshot = objects.Snapshot.get_by_id(
+            context,
+            checkpoint['master_snapshot'])
+        slave_snapshot = objects.Snapshot.get_by_id(
+            context,
+            checkpoint['slave_snapshot'])
+
+        try:
+            self.rollback_snapshot(context, master_snapshot)
+            self.rollback_snapshot(context, slave_snapshot)
+        except Exception as err:
+            msg = (_("rollback checkpoint failed, err: %s"), err)
+            LOG.error(msg)
+            raise exception.RollbackFailed(reason=msg)
+
+        rollback = {
+            'id': checkpoint['id'],
+            'master_volume': master_snapshot['volume_id'],
+            'slave_volume': slave_snapshot['volume_id']
+        }
+        return rollback

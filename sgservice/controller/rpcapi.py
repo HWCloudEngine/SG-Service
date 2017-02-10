@@ -119,3 +119,8 @@ class ControllerAPI(object):
     def reverse_replicate(self, ctxt, volume):
         cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(ctxt, 'reverse_replicate', volume_id=volume.id)
+
+    def create_volume(self, ctxt, snapshot, c_volume):
+        cctxt = self.client.prepare(version='1.0')
+        return cctxt.cast(ctxt, 'create_volume', snapshot_id=snapshot.id,
+                          volume_id=c_volume.id)
