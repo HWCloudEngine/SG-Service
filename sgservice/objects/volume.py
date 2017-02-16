@@ -142,7 +142,7 @@ class VolumeList(base.ObjectListBase, base.SGServiceObject):
     }
 
     @classmethod
-    def get_all(cls, context, marker, limit, sort_keys=None, sort_dirs=None,
+    def get_all(cls, context, marker=None, limit=None, sort_keys=None, sort_dirs=None,
                 filters=None, offset=None):
         volumes = db.volume_get_all(context, marker=marker, limit=limit,
                                     sort_keys=sort_keys, sort_dirs=sort_dirs,

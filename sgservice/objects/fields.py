@@ -35,8 +35,11 @@ class VolumeStatus(BaseSGServiceEnum):
     DELETED = 'deleted'
     DISABLING = 'disabling'
     DISABLED = 'disabled'
+    ATTACHING = 'attaching'
+    IN_USE = 'in_use'
     RESTORING_BACKUP = 'restoring_backup'
     ERROR_RESTORING = 'error_restoring'
+    ERROR_ATTACHING = 'error_attaching'
 
     ALL = (ERROR, ENABLING, ENABLED, DELETED, DISABLING, DISABLED,
            RESTORING_BACKUP, ERROR_RESTORING)
