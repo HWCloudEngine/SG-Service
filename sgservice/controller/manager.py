@@ -30,7 +30,7 @@ from sgservice.objects import fields
 controller_manager_opts = [
     cfg.IntOpt('sync_status_interval',
                default=60,
-               help='sync resources status interval'),
+               help='sync resources status interval')
 ]
 
 sg_client_opts = [

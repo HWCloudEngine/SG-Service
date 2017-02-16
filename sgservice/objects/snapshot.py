@@ -106,7 +106,7 @@ class SnapshotList(base.ObjectListBase, base.SGServiceObject):
     }
 
     @classmethod
-    def get_all(cls, context, filters, marker=None, limit=None,
+    def get_all(cls, context, filters=None, marker=None, limit=None,
                 sort_keys=None, sort_dirs=None, offset=None):
         snapshots = db.snapshot_get_all(context, filters=filters,
                                         marker=marker, limit=limit,
