@@ -278,3 +278,8 @@ class CreateVolumeFailed(SGServiceException):
 
 class RollbackFailed(SGServiceException):
     message = _('Rollback failed: %(reason)s')
+
+
+class InvalidVolumeAttachMode(SGServiceException):
+    message = _("Invalid attaching mode '%(mode)s' for "
+                "volume %(volume_id)s.")
