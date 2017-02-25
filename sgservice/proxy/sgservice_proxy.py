@@ -67,7 +67,7 @@ proxy_manager_opts = [
                help='value of cascaded cinder url'),
     cfg.StrOpt('cascaded_region_name',
                default='RegionOne',
-               help='Region name of this node')
+               help='Region name of this node'),
     cfg.IntOpt('sync_status_interval',
                default=60,
                help='sync resources status interval')
