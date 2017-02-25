@@ -12,12 +12,14 @@
 
 """Handles all requests relating to controller service."""
 
+import random
 import six
 
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from sgservice import context
 from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller import rpcapi as protection_rpcapi
 from sgservice.db import base
@@ -38,6 +40,64 @@ class API(base.Base):
     def __init__(self, db_driver=None):
         self.controller_rpcapi = protection_rpcapi.ControllerAPI()
         super(API, self).__init__(db_driver)
+
+    def _is_controller_service_enabled(self, availability_zone, host):
+        """Check if there is a controller service available."""
+        topic = CONF.controller_topic
+        ctxt = context.get_admin_context()
+        services = objects.ServiceList.get_all_by_topic(
+            ctxt, topic, disabled=False)
+        for srv in services:
+            if (self._az_matched(srv, availability_zone) and
+                        srv.host == host and srv.is_up):
+                return True
+        return False
+
+    def _get_any_available_controller_service(self, availability_zone):
+        """Get an available controller service host.
+
+        Get an available controller service host in the specified
+        availability zone.
+        """
+        services = [srv for srv in self._list_controller_services()]
+        random.shuffle(services)
+        # Get the next running service with matching availability zone.
+        idx = 0
+        while idx < len(services):
+            srv = services[idx]
+            if (self._az_matched(srv, availability_zone) and
+                    srv.is_up):
+                return srv.host
+            idx += 1
+        return None
+
+    def _get_available_controller_service_host(self, az):
+        """Return an appropriate controller service host."""
+        controller_host = None
+        controller_host = self._get_any_available_controller_service(az)
+        if not controller_host:
+            raise exception.ServiceNotFound(service_id='sgservice-controller')
+        return controller_host
+
+    def _list_controller_services(self):
+        """List all enabled controller services.
+
+        :returns: list -- hosts for services that are enabled for sgservice.
+        """
+        topic = CONF.controller_topic
+        ctxt = context.get_admin_context()
+        services = objects.ServiceList.get_all_by_topic(
+            ctxt, topic, disabled=False)
+        return services
+
+    def _list_controller_hosts(self):
+        services = self._list_controller_services()
+        return [srv.host for srv in services
+                if not srv.disabled and srv.is_up]
+
+    def _az_matched(self, service, availability_zone):
+        return ((not availability_zone) or
+                service.availability_zone == availability_zone)
 
     def get(self, context, volume_id):
         try:
@@ -78,13 +138,17 @@ class API(base.Base):
         if description is None:
             description = cinder_volume.description
 
+        availability_zone = cinder_volume.availability_zone
+        host = self._get_available_controller_service_host(
+            az=availability_zone)
         volume_properties = {
+            'host': host,
             'user_id': context.user_id,
             'project_id': context.project_id,
             'status': fields.VolumeStatus.ENABLING,
             'display_name': name,
             'display_description': description,
-            'availability_zone': cinder_volume.availability_zone,
+            'availability_zone': availability_zone,
             'size': cinder_volume.size
         }
 
@@ -226,6 +290,12 @@ class API(base.Base):
 
     def attach(self, context, volume, instance_uuid, host_name, mountpoint,
                mode):
+        access_mode = volume['access_mode']
+        if access_mode is not None and access_mode != mode:
+            LOG.error(_('being attached by different mode'))
+            raise exception.InvalidVolumeAttachMode(mode=mode,
+                                                    volume_id=volume.id)
+
         attach_results = self.controller_rpcapi.attach_volume(context,
                                                               volume,
                                                               instance_uuid,
@@ -270,8 +340,10 @@ class API(base.Base):
                               {'status': 'backing-up',
                                'previous_status': previous_status})
         backup = None
+        host = volume['host']
         try:
             kwargs = {
+                'host': host,
                 'use_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,
@@ -401,9 +473,11 @@ class API(base.Base):
             destination = 'remote'
         else:
             destination = 'local'
+        host = volume['host']
         try:
 
             kwargs = {
+                'host': host,
                 'use_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,

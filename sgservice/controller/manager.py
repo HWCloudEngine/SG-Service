@@ -302,8 +302,9 @@ class ControllerManager(manager.Manager):
         if volume['status'] == 'attaching':
             access_mode = volume['access_mode']
             if access_mode is not None and access_mode != mode:
-                raise exception.InvalidVolume(
-                    reason=_('being attached by different mode'))
+                LOG.error(_('being attached by different mode'))
+                raise exception.InvalidVolumeAttachMode(mode=mode,
+                                                        volume_id=volume.id)
 
         host_name_sanitized = utils.sanitize_hostname(
             host_name) if host_name else None

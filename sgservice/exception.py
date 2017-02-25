@@ -274,3 +274,8 @@ class CinderClientError(SGServiceException):
 
 class CreateVolumeFailed(SGServiceException):
     message = _('Create volume from snapshot failed: %(reason)s')
+
+
+class InvalidVolumeAttachMode(SGServiceException):
+    message = _("Invalid attaching mode '%(mode)s' for "
+                "volume %(volume_id)s.")
