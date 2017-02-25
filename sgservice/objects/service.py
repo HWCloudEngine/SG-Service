@@ -19,6 +19,7 @@ from sgservice import exception
 from sgservice.i18n import _
 from sgservice import objects
 from sgservice.objects import base
+from sgservice import utils
 
 
 @base.SGServiceObjectRegistry.register
@@ -89,6 +90,11 @@ class Service(base.SGServicePersistentObject, base.SGServiceObject,
             updated_values = db.service_destroy(self._context, self.id)
             self.update(updated_values)
             self.obj_reset_changes(updated_values.keys())
+
+    @property
+    def is_up(self):
+        """Check whether a service is up based on last heartbeat."""
+        return utils.service_is_up(self)
 
 
 @base.SGServiceObjectRegistry.register
