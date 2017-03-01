@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='common.proto',
   package='huawei.proto',
   syntax='proto3',
-  serialized_pb=_b('\n\x0c\x63ommon.proto\x12\x0chuawei.proto\"w\n\x0fOperationRecord\x12\x12\n\noperate_id\x18\x01 \x01(\t\x12\x31\n\x04type\x18\x02 \x01(\x0e\x32#.huawei.proto.REPLICATION_OPERATION\x12\x0c\n\x04time\x18\x03 \x01(\x04\x12\x0f\n\x07snap_id\x18\x04 \x01(\t\"d\n\nVolumeMeta\x12&\n\x04info\x18\x01 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\x12.\n\x07records\x18\x03 \x03(\x0b\x32\x1d.huawei.proto.OperationRecord\"\xf9\x01\n\nVolumeInfo\x12\x0e\n\x06vol_id\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12/\n\nvol_status\x18\x03 \x01(\x0e\x32\x1b.huawei.proto.VOLUME_STATUS\x12\x0c\n\x04size\x18\x04 \x01(\x04\x12\x12\n\nrep_enable\x18\x06 \x01(\x08\x12\x10\n\x08rep_uuid\x18\x07 \x01(\t\x12\x14\n\x0cpeer_volumes\x18\x08 \x03(\t\x12$\n\x04role\x18\t \x01(\x0e\x32\x16.huawei.proto.REP_ROLE\x12,\n\nrep_status\x18\n \x01(\x0e\x32\x18.huawei.proto.REP_STATUS*J\n\x06RESULT\x12\x0f\n\x0b\x44RS_UNKNOWN\x10\x00\x12\n\n\x06\x44RS_OK\x10\x01\x12\x12\n\x0eINTERNAL_ERROR\x10\x02\x12\x0f\n\x0bNO_SUCH_KEY\x10\x03*\xc2\x03\n\nStatusCode\x12\x07\n\x03sOk\x10\x00\x12\x12\n\x0esInternalError\x10\x01\x12\x15\n\x11sSnapAlreadyExist\x10\x64\x12\x11\n\rsSnapNotExist\x10\x65\x12\x14\n\x10sSnapPersitError\x10\x66\x12\x19\n\x15sSnapTransactionError\x10g\x12\x14\n\x10sSnapUpdateError\x10h\x12\x19\n\x15sSnapMetaPersistError\x10i\x12\x19\n\x14sReplicationNotExist\x10\xc9\x01\x12!\n\x1csReplicationMetaPersistError\x10\xcd\x01\x12\x16\n\x11sInvalidOperation\x10\xce\x01\x12\x18\n\x13sVolumeAlreadyExist\x10\xac\x02\x12\x14\n\x0fsVolumeNotExist\x10\xad\x02\x12\x1c\n\x17sVolumeMetaPersistError\x10\xb1\x02\x12\x18\n\x13sBackupAlreadyExist\x10\x90\x03\x12\x14\n\x0fsBackupNotExist\x10\x91\x03\x12\x1d\n\x18sBackupNoFullbackupExist\x10\x92\x03\x12\x18\n\x13sBackupCanNotDelete\x10\x93\x03*?\n\x08REP_ROLE\x12\x0f\n\x0bREP_UNKNOWN\x10\x00\x12\x0f\n\x0bREP_PRIMARY\x10\x01\x12\x11\n\rREP_SECONDARY\x10\x02*\x85\x02\n\x15REPLICATION_OPERATION\x12\x15\n\x11INVALID_OPERATION\x10\x00\x12\x16\n\x12REPLICATION_CREATE\x10\x01\x12\x16\n\x12REPLICATION_ENABLE\x10\x02\x12\x17\n\x13REPLICATION_DISABLE\x10\x03\x12\x18\n\x14REPLICATION_FAILOVER\x10\x04\x12\x17\n\x13REPLICATION_REVERSE\x10\x05\x12\x15\n\x11REPLICATION_QUERY\x10\x06\x12\x16\n\x12REPLICATION_DELETE\x10\x07\x12\x14\n\x10REPLICATION_TEST\x10\x08\x12\x14\n\x10REPLICATION_LIST\x10\t*\xe6\x01\n\nREP_STATUS\x12\x0e\n\nREP_UNKNOW\x10\x00\x12\x10\n\x0cREP_CREATING\x10\x01\x12\x10\n\x0cREP_ENABLING\x10\x03\x12\x0f\n\x0bREP_ENABLED\x10\x04\x12\x11\n\rREP_DISABLING\x10\x05\x12\x10\n\x0cREP_DISABLED\x10\x06\x12\x14\n\x10REP_FAILING_OVER\x10\x07\x12\x13\n\x0fREP_FAILED_OVER\x10\x08\x12\x11\n\rREP_REVERSING\x10\t\x12\x10\n\x0cREP_DELETING\x10\x0b\x12\x0f\n\x0bREP_DELETED\x10\x0c\x12\r\n\tREP_ERROR\x10\x14*h\n\rVOLUME_STATUS\x12\x0f\n\x0bVOL_UNKNOWN\x10\x00\x12\x10\n\x0cVOL_ENABLING\x10\x01\x12\x11\n\rVOL_AVAILABLE\x10\x02\x12\x10\n\x0cVOL_ATTACHED\x10\x03\x12\x0f\n\x0bVOL_DELETED\x10\x04\x62\x06proto3')
+  serialized_pb=_b('\n\x0c\x63ommon.proto\x12\x0chuawei.proto\"w\n\x0fOperationRecord\x12\x12\n\noperate_id\x18\x01 \x01(\t\x12\x31\n\x04type\x18\x02 \x01(\x0e\x32#.huawei.proto.REPLICATION_OPERATION\x12\x0c\n\x04time\x18\x03 \x01(\x04\x12\x0f\n\x07snap_id\x18\x04 \x01(\t\"d\n\nVolumeMeta\x12&\n\x04info\x18\x01 \x01(\x0b\x32\x18.huawei.proto.VolumeInfo\x12.\n\x07records\x18\x03 \x03(\x0b\x32\x1d.huawei.proto.OperationRecord\"\xf9\x01\n\nVolumeInfo\x12\x0e\n\x06vol_id\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12/\n\nvol_status\x18\x03 \x01(\x0e\x32\x1b.huawei.proto.VOLUME_STATUS\x12\x0c\n\x04size\x18\x04 \x01(\x04\x12\x12\n\nrep_enable\x18\x06 \x01(\x08\x12\x10\n\x08rep_uuid\x18\x07 \x01(\t\x12\x14\n\x0cpeer_volumes\x18\x08 \x03(\t\x12$\n\x04role\x18\t \x01(\x0e\x32\x16.huawei.proto.REP_ROLE\x12,\n\nrep_status\x18\n \x01(\x0e\x32\x18.huawei.proto.REP_STATUS*J\n\x06RESULT\x12\x0f\n\x0b\x44RS_UNKNOWN\x10\x00\x12\n\n\x06\x44RS_OK\x10\x01\x12\x12\n\x0eINTERNAL_ERROR\x10\x02\x12\x0f\n\x0bNO_SUCH_KEY\x10\x03*\xd9\x03\n\nStatusCode\x12\x07\n\x03sOk\x10\x00\x12\x12\n\x0esInternalError\x10\x01\x12\x15\n\x11sSnapAlreadyExist\x10\x64\x12\x11\n\rsSnapNotExist\x10\x65\x12\x14\n\x10sSnapPersitError\x10\x66\x12\x19\n\x15sSnapTransactionError\x10g\x12\x14\n\x10sSnapUpdateError\x10h\x12\x19\n\x15sSnapMetaPersistError\x10i\x12\x15\n\x11sSnapCreateDenied\x10j\x12\x19\n\x14sReplicationNotExist\x10\xc9\x01\x12!\n\x1csReplicationMetaPersistError\x10\xcd\x01\x12\x16\n\x11sInvalidOperation\x10\xce\x01\x12\x18\n\x13sVolumeAlreadyExist\x10\xac\x02\x12\x14\n\x0fsVolumeNotExist\x10\xad\x02\x12\x1c\n\x17sVolumeMetaPersistError\x10\xb1\x02\x12\x18\n\x13sBackupAlreadyExist\x10\x90\x03\x12\x14\n\x0fsBackupNotExist\x10\x91\x03\x12\x1d\n\x18sBackupNoFullbackupExist\x10\x92\x03\x12\x18\n\x13sBackupCanNotDelete\x10\x93\x03*?\n\x08REP_ROLE\x12\x0f\n\x0bREP_UNKNOWN\x10\x00\x12\x0f\n\x0bREP_PRIMARY\x10\x01\x12\x11\n\rREP_SECONDARY\x10\x02*\x85\x02\n\x15REPLICATION_OPERATION\x12\x15\n\x11INVALID_OPERATION\x10\x00\x12\x16\n\x12REPLICATION_CREATE\x10\x01\x12\x16\n\x12REPLICATION_ENABLE\x10\x02\x12\x17\n\x13REPLICATION_DISABLE\x10\x03\x12\x18\n\x14REPLICATION_FAILOVER\x10\x04\x12\x17\n\x13REPLICATION_REVERSE\x10\x05\x12\x15\n\x11REPLICATION_QUERY\x10\x06\x12\x16\n\x12REPLICATION_DELETE\x10\x07\x12\x14\n\x10REPLICATION_TEST\x10\x08\x12\x14\n\x10REPLICATION_LIST\x10\t*\xe6\x01\n\nREP_STATUS\x12\x0e\n\nREP_UNKNOW\x10\x00\x12\x10\n\x0cREP_CREATING\x10\x01\x12\x10\n\x0cREP_ENABLING\x10\x03\x12\x0f\n\x0bREP_ENABLED\x10\x04\x12\x11\n\rREP_DISABLING\x10\x05\x12\x10\n\x0cREP_DISABLED\x10\x06\x12\x14\n\x10REP_FAILING_OVER\x10\x07\x12\x13\n\x0fREP_FAILED_OVER\x10\x08\x12\x11\n\rREP_REVERSING\x10\t\x12\x10\n\x0cREP_DELETING\x10\x0b\x12\x0f\n\x0bREP_DELETED\x10\x0c\x12\r\n\tREP_ERROR\x10\x14*h\n\rVOLUME_STATUS\x12\x0f\n\x0bVOL_UNKNOWN\x10\x00\x12\x10\n\x0cVOL_ENABLING\x10\x01\x12\x11\n\rVOL_AVAILABLE\x10\x02\x12\x10\n\x0cVOL_ATTACHED\x10\x03\x12\x0f\n\x0bVOL_DELETED\x10\x04\x62\x06proto3')
 )
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
@@ -94,50 +94,54 @@ _STATUSCODE = _descriptor.EnumDescriptor(
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sReplicationNotExist', index=8, number=201,
+      name='sSnapCreateDenied', index=8, number=106,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sReplicationMetaPersistError', index=9, number=205,
+      name='sReplicationNotExist', index=9, number=201,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sInvalidOperation', index=10, number=206,
+      name='sReplicationMetaPersistError', index=10, number=205,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sVolumeAlreadyExist', index=11, number=300,
+      name='sInvalidOperation', index=11, number=206,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sVolumeNotExist', index=12, number=301,
+      name='sVolumeAlreadyExist', index=12, number=300,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sVolumeMetaPersistError', index=13, number=305,
+      name='sVolumeNotExist', index=13, number=301,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sBackupAlreadyExist', index=14, number=400,
+      name='sVolumeMetaPersistError', index=14, number=305,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sBackupNotExist', index=15, number=401,
+      name='sBackupAlreadyExist', index=15, number=400,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sBackupNoFullbackupExist', index=16, number=402,
+      name='sBackupNotExist', index=16, number=401,
       options=None,
       type=None),
     _descriptor.EnumValueDescriptor(
-      name='sBackupCanNotDelete', index=17, number=403,
+      name='sBackupNoFullbackupExist', index=17, number=402,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='sBackupCanNotDelete', index=18, number=403,
       options=None,
       type=None),
   ],
   containing_type=None,
   options=None,
   serialized_start=582,
-  serialized_end=1032,
+  serialized_end=1055,
 )
 _sym_db.RegisterEnumDescriptor(_STATUSCODE)
 
@@ -163,8 +167,8 @@ _REP_ROLE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1034,
-  serialized_end=1097,
+  serialized_start=1057,
+  serialized_end=1120,
 )
 _sym_db.RegisterEnumDescriptor(_REP_ROLE)
 
@@ -218,8 +222,8 @@ _REPLICATION_OPERATION = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1100,
-  serialized_end=1361,
+  serialized_start=1123,
+  serialized_end=1384,
 )
 _sym_db.RegisterEnumDescriptor(_REPLICATION_OPERATION)
 
@@ -281,8 +285,8 @@ _REP_STATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1364,
-  serialized_end=1594,
+  serialized_start=1387,
+  serialized_end=1617,
 )
 _sym_db.RegisterEnumDescriptor(_REP_STATUS)
 
@@ -316,8 +320,8 @@ _VOLUME_STATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1596,
-  serialized_end=1700,
+  serialized_start=1619,
+  serialized_end=1723,
 )
 _sym_db.RegisterEnumDescriptor(_VOLUME_STATUS)
 
@@ -334,6 +338,7 @@ sSnapPersitError = 102
 sSnapTransactionError = 103
 sSnapUpdateError = 104
 sSnapMetaPersistError = 105
+sSnapCreateDenied = 106
 sReplicationNotExist = 201
 sReplicationMetaPersistError = 205
 sInvalidOperation = 206

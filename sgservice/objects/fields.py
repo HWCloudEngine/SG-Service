@@ -41,9 +41,10 @@ class VolumeStatus(BaseSGServiceEnum):
     ERROR_RESTORING = 'error_restoring'
     ERROR_ATTACHING = 'error_attaching'
     ROLLING_BACK = 'rolling_back'
+    BACKING_UP = 'backing-up'
 
     ALL = (ERROR, ENABLING, ENABLED, DELETED, DISABLING, DISABLED,
-           RESTORING_BACKUP, ERROR_RESTORING, ROLLING_BACK)
+           RESTORING_BACKUP, ERROR_RESTORING, ROLLING_BACK, BACKING_UP)
 
 
 class VolumeStatusField(BaseEnumField):
@@ -97,9 +98,10 @@ class SnapshotStatus(BaseSGServiceEnum):
     DELETING = 'deleting'
     DELETED = 'deleted'
     ERROR_DELETING = 'error_deleting'
+    ROLLING_BACK = 'rolling-back'
 
     ALL = (ERROR, AVAILABLE, CREATING, DELETING, DELETED,
-           ERROR_DELETING)
+           ERROR_DELETING, ROLLING_BACK)
 
 
 class SnapshotStatusField(BaseEnumField):

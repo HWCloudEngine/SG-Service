@@ -49,8 +49,7 @@ class ISCSISGDriver(SGDriver):
         return response['devices']
 
     def enable_sg(self, volume, device):
-        response = self.sg_ctrl.volumes.enable_sg(
-            volume['id'], device, volume['size'])
+        response = self.sg_ctrl.volumes.enable_sg(volume, device)
         if response['status'] != 0:
             msg = _("Call enable_sg to sg client failed")
             LOG.error(msg)
@@ -61,15 +60,15 @@ class ISCSISGDriver(SGDriver):
             driver_data[key] = value
         return driver_data
 
-    def disable_sg(self, volume_id):
-        response = self.sg_ctrl.volumes.disable_sg(volume_id)
+    def disable_sg(self, volume):
+        response = self.sg_ctrl.volumes.disable_sg(volume)
         if response['status'] != 0:
             msg = _("Call disable_sg to sg client failed")
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
-    def get_volume(self, volume_id):
-        response = self.sg_ctrl.volumes.get_volume(volume_id)
+    def get_volume(self, volume):
+        response = self.sg_ctrl.volumes.get_volume(volume)
         if response['status'] != 0:
             msg = _("Call get_volume to sg client failed")
             LOG.error(msg)
@@ -112,32 +111,111 @@ class ISCSISGDriver(SGDriver):
                                'data': data}
         return connection_info
 
-    def create_backup(self, **kwargs):
-        pass
+    def create_backup(self, backup):
+        response = self.sg_ctrl.backups.create_backup(backup)
+        if response['status'] != 0:
+            msg = _("Call create_backup to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
 
-    def delete_backup(self, **kwargs):
-        pass
+    def delete_backup(self, backup):
+        response = self.sg_ctrl.backups.delete_backup(backup)
+        if response['status'] != 0:
+            msg = _("Call delete_backup to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
 
-    def restore_backup(self, **kwargs):
-        pass
+    def restore_backup(self, backup, volume, device):
+        response = self.sg_ctrl.backups.restore_backup(backup, volume, device)
+        if response['status'] != 0:
+            msg = _("Call restore_backup to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
 
-    def create_snapshot(self, **kwargs):
-        pass
+    def get_backup(self, backup):
+        response = self.sg_ctrl.backups.get_backup(backup)
+        if response['status'] != 0:
+            msg = _("Call get_backup to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+        return response['backup']
 
-    def delete_snapshot(self, **kwargs):
-        pass
+    def list_backups(self, volume):
+        response = self.sg_ctrl.backups.list_backups(volume)
+        if response['status'] != 0:
+            msg = _("Call list_backups to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+        return response['backups']
 
-    def enable_replicate(self, **kwargs):
-        pass
+    def create_snapshot(self, snapshot, volume):
+        response = self.sg_ctrl.snapshots.create_snapshot(snapshot, volume)
+        if response['status'] != 0:
+            msg = _("Call create_snapshot to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
 
-    def disable_replicate(self, **kwarg):
-        pass
+    def delete_snapshot(self, snapshot):
+        response = self.sg_ctrl.snapshots.delete_snapshot(snapshot)
+        if response['status'] != 0:
+            msg = _("Call delete_snapshot to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
 
-    def failover_replicate(self, **kwargs):
-        pass
+    def get_snapshot(self, snapshot):
+        response = self.sg_ctrl.snapshots.get_snapshot(snapshot)
+        if response['status'] != 0:
+            msg = _("Call get_snapshot to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+        return response['snapshot']
 
-    def delete_replicate(self, **kwargs):
-        pass
+    def list_snapshots(self, volume):
+        response = self.sg_ctrl.snapshots.list_snapshots(volume)
+        if response['status'] != 0:
+            msg = _("Call list_snapshots to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+        return response['snapshots']
 
-    def reverse_replicate(self, **kwargs):
-        pass
+    def create_replicate(self, volume):
+        response = self.sg_ctrl.replicates.create_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call create_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def enable_replicate(self, volume):
+        response = self.sg_ctrl.replicates.enable_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call enable_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def disable_replicate(self, volume):
+        response = self.sg_ctrl.replicates.enable_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call enable_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def failover_replicate(self, volume):
+        response = self.sg_ctrl.replicates.enable_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call enable_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def delete_replicate(self, volume):
+        response = self.sg_ctrl.replicates.enable_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call enable_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def reverse_replicate(self, volume):
+        response = self.sg_ctrl.replicates.enable_replicate(volume)
+        if response['status'] != 0:
+            msg = _("Call enable_replicate to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
