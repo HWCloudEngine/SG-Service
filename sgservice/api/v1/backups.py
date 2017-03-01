@@ -19,6 +19,7 @@ import webob
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
+from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
@@ -26,9 +27,6 @@ from sgservice import utils
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
-
-SUPPORT_BACKUP_TYPE = ['full', 'incremental']
-SUPPORT_BACKUP_DESTINATION = ['local', 'remote']
 
 
 class BackupViewBuilder(common.ViewBuilder):
@@ -165,13 +163,13 @@ class BackupsController(wsgi.Controller):
         name = backup.get('name', 'backup-%s' % volume_id)
         description = backup.get('description', name)
 
-        backup_type = backup.get('type', 'incremental')
-        if backup_type not in SUPPORT_BACKUP_TYPE:
+        backup_type = backup.get('type', constants.FULL_BACKUP)
+        if backup_type not in constants.SUPPORT_BACKUP_TYPES:
             msg = _('backup type should be full or incremental')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        backup_destination = backup.get('destination', 'local')
-        if backup_destination not in SUPPORT_BACKUP_DESTINATION:
+        backup_destination = backup.get('destination', constants.LOCAL_BACKUP)
+        if backup_destination not in constants.SUPPORT_BACKUP_DESTINATIONS:
             msg = _('backup destination should be local or remote')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
