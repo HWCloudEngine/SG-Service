@@ -19,6 +19,8 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 import webob.exc
+
+from sgservice.common import constants
 from sgservice import context
 from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller import rpcapi as protection_rpcapi
@@ -330,14 +332,15 @@ class API(base.Base):
 
     def create_backup(self, context, name, description, volume,
                       backup_type='incremental', backup_destination='local'):
-        if volume['status'] not in ['enabled', 'in-use']:
+        if volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                    fields.VolumeStatus.IN_USE]:
             msg = (_('Volume to be backed up should be enabled or in-use, '
                      'but current status is "%s".') % volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
         previous_status = volume['status']
         self.db.volume_update(context, volume['id'],
-                              {'status': 'backing-up',
+                              {'status': fields.VolumeStatus.BACKING_UP,
                                'previous_status': previous_status})
         backup = None
         host = volume['host']
@@ -462,17 +465,18 @@ class API(base.Base):
 
     def create_snapshot(self, context, name, description, volume,
                         checkpoint_id=None):
-        if volume['status'] not in ['enabled', 'in-use']:
+        if volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                    fields.VolumeStatus.IN_USE]:
             msg = (_('Volume to create snapshot should be enabled or in-use, '
                      'but current status is "%s".') % volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
         snapshot = None
         replicate_mode = volume['replicate_mode']
-        if checkpoint_id and replicate_mode == 'slave':
-            destination = 'remote'
+        if checkpoint_id and replicate_mode == constants.REP_MASTER:
+            destination = constants.REMOTE_SNAPSHOT
         else:
-            destination = 'local'
+            destination = constants.LOCAL_SNAPSHOT
         host = volume['host']
         try:
 
@@ -634,15 +638,16 @@ class API(base.Base):
 
     def create_replication(self, context, name, description, master_volume,
                            slave_volume):
-        if master_volume['status'] not in ['enabled', 'in-use']:
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
             msg = (_('Master volume of a replication should be enabled '
                      'or in-use, but current status is "%s".') %
                    master_volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
-        if slave_volume['status'] not in ['enabled']:
-            msg = (_('Slave volume of a replication should be enabled '
-                     'or in-use, but current status is "%s".') %
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled, '
+                     'but current status is "%s".') %
                    slave_volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -667,9 +672,9 @@ class API(base.Base):
 
         try:
             self.create_replicate(context, master_volume, replication['id'],
-                                  'master', slave_volume['id'])
+                                  constants.REP_MASTER, slave_volume['id'])
             self.create_replicate(context, slave_volume, replication['id'],
-                                  'slave', master_volume['id'])
+                                  constants.REP_SLAVE, master_volume['id'])
         except Exception:
             with excutils.save_and_reraise_exception():
                 replication.destroy()
@@ -853,18 +858,24 @@ class API(base.Base):
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        if mode == 'master' and volume['status'] not in ['enabled', 'in-use']:
+        if (mode == constants.REP_MASTER
+            and volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                         fields.VolumeStatus.IN_USE]):
             msg = (_('Master volume of a replication should be enabled '
                      'or in-use, but current status is "%s".') %
                    volume['status'])
             raise exception.InvalidVolume(reason=msg)
-        elif mode == 'slave' and volume['status'] not in ['enabled']:
+        elif (mode == constants.REP_SLAVE
+              and volume['status'] not in [fields.VolumeStatus.ENABLED]):
             msg = (_('Slave volume of a replication should be enabled, '
                      'but current status is "%s".') %
                    volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
-        access_mode = 'rw' if mode == 'master' else 'ro'
+        if mode == constants.REP_MASTER:
+            access_mode = constants.ACCESS_RW
+        else:
+            access_mode = constants.ACCESS_RO
         self.db.volume_update(
             context, volume['id'],
             {'replicate_status': fields.ReplicateStatus.ENABLING,
@@ -877,7 +888,10 @@ class API(base.Base):
         return volume
 
     def enable_replicate(self, context, volume):
-        if volume['replicate_status'] not in ['disabled', 'failed-over']:
+        if volume['replicate_status'] not in [
+            fields.ReplicateStatus.DISABLED,
+            fields.ReplicateStatus.FAILED_OVER
+        ]:
             msg = (_('Replicate-status of enable-replicate volume must be '
                      'disabled or failed-over, but current status is "%s".') %
                    volume['replicate_status'])
@@ -891,7 +905,10 @@ class API(base.Base):
         return volume
 
     def disable_replicate(self, context, volume):
-        if volume['replicate_status'] not in ['enabled', 'failed-over']:
+        if volume['replicate_status'] not in [
+            fields.ReplicateStatus.ENABLED,
+            fields.ReplicateStatus.FAILED_OVER
+        ]:
             msg = (_('Replicate-status of disable-replicate volume must be '
                      'enabled or failed-over, but current status is "%s".') %
                    volume['replicate_status'])
@@ -905,8 +922,11 @@ class API(base.Base):
         return volume
 
     def delete_replicate(self, context, volume):
-        if volume['replicate_status'] not in ['disabled', 'failed-over',
-                                              'error']:
+        if volume['replicate_status'] not in [
+            fields.ReplicateStatus.DISABLED,
+            fields.ReplicateStatus.FAILED_OVER,
+            fields.ReplicateStatus.ERROR
+        ]:
             msg = (_('Replicate-status of delete-replicate volume must be '
                      'disabled or failed-over or error, but current status '
                      'is "%s".') %
@@ -919,8 +939,13 @@ class API(base.Base):
 
         self.controller_rpcapi.delete_replicate(context, volume)
 
+<<<<<<< HEAD
     def failover_replicate(self, context, volume, force=False):
         if volume['replicate_status'] not in ['enabled']:
+=======
+    def failover_replicate(self, context, volume):
+        if volume['replicate_status'] not in [fields.ReplicateStatus.ENABLED]:
+>>>>>>> 7e37690... Implement sg-driver
             msg = (_('Replicate-status of failover-replicate volume must '
                      'be enabled, but current status is "%s".') %
                    volume['replicate_status'])
@@ -934,7 +959,9 @@ class API(base.Base):
         return volume
 
     def reverse_replicate(self, context, volume):
-        if volume['replicate_status'] not in ['failed-over']:
+        if volume['replicate_status'] not in [
+            fields.ReplicateStatus.FAILED_OVER
+        ]:
             msg = (_('Replicate-status of reverse-replicate volume must '
                      'be failed-over, but current status is "%s".') %
                    volume['replicate_status'])
@@ -1059,13 +1086,16 @@ class API(base.Base):
         return checkpoints
 
     def rollback_checkpoint(self, context, checkpoint):
+        if checkpoint['status'] not in [fields.CheckpointStatus.ENABLED]:
+            msg = _('Checkpoint to rollback must be enabled')
+            raise exception.InvalidCheckpoint(reason=msg)
+
         master_snapshot = objects.Snapshot.get_by_id(
             context,
             checkpoint['master_snapshot'])
         slave_snapshot = objects.Snapshot.get_by_id(
             context,
             checkpoint['slave_snapshot'])
-
         try:
             self.rollback_snapshot(context, master_snapshot)
             self.rollback_snapshot(context, slave_snapshot)

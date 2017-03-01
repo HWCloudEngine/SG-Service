@@ -69,11 +69,31 @@ class SGDriver(object):
         pass
 
     @abc.abstractmethod
+    def get_backup(self, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def list_backups(self, **kwargs):
+        pass
+
+    @abc.abstractmethod
     def create_snapshot(self, **kwargs):
         pass
 
     @abc.abstractmethod
     def delete_snapshot(self, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def get_snapshot(self, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def list_snapshots(self, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def create_replicate(self, **kwargs):
         pass
 
     @abc.abstractmethod

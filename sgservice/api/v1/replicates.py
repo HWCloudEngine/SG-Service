@@ -19,14 +19,13 @@ import webob
 
 from sgservice.api.openstack import wsgi
 from sgservice.api.v1.volumes import VolumeViewBuilder
+from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
-
-VOLUME_REPLICATE_MODE = ['master', 'slave']
 
 
 class ReplicatesController(wsgi.Controller):
@@ -63,9 +62,10 @@ class ReplicatesController(wsgi.Controller):
 
         context = req.environ['sgservice.context']
         params = body.get('create_replicate', {})
-        mode = params.get('mode', 'master')
-        if mode not in VOLUME_REPLICATE_MODE:
-            msg = _('volume replicate mode should be master or slave')
+        mode = params.get('mode', constants.REP_MASTER)
+        if mode not in constants.SUPPORT_REPLICATE_MODES:
+            msg = (_('volume replicate mode must in %s'),
+                   constants.SUPPORT_REPLICATE_MODES)
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
         replication_id = params.get('replication_id', None)
@@ -135,7 +135,7 @@ class ReplicatesController(wsgi.Controller):
 
     @wsgi.action('reverse_replicate')
     def reverse_replicate(self, req, id, body):
-        """Reverse a volume's replicaten"""
+        """Reverse a volume's replicate"""
         LOG.info(_LI("Reverse volume's replicate, volume_id: %s"), id)
         if not uuidutils.is_uuid_like(id):
             msg = _("Invalid volume id provided.")
