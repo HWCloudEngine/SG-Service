@@ -22,6 +22,7 @@ from cinderclient.v2 import client as cinder_client
 from keystoneclient.v2_0 import client as kc
 from cinderclient import exceptions as cinder_exception
 from keystoneclient import exceptions as keystone_exception
+from keystoneauth1.exceptions.connection import ConnectFailure
 
 from sgsclient.exceptions import NotFound
 from sgservice.i18n import _, _LI, _LE
@@ -67,7 +68,7 @@ proxy_manager_opts = [
                help='value of cascaded cinder url'),
     cfg.StrOpt('cascaded_region_name',
                default='RegionOne',
-               help='Region name of this node')
+               help='Region name of this node'),
     cfg.IntOpt('sync_status_interval',
                default=60,
                help='sync resources status interval')
@@ -131,7 +132,9 @@ class SGServiceProxy(manager.Manager):
         for volume in volumes:
             if volume.status in (fields.VolumeStatus.ENABLING,
                                  fields.VolumeStatus.DISABLING,
-                                 fields.VolumeStatus.RESTORING_BACKUP):
+                                 fields.VolumeStatus.ATTACHING,
+                                 fields.VolumeStatus.RESTORING_BACKUP,
+                                 fields.VolumeStatus.ROLLING_BACK):
                 self.sync_volumes[volume.id] = volume
 
         snapshots = objects.SnapshotList.get_all(cxt)
@@ -170,10 +173,19 @@ class SGServiceProxy(manager.Manager):
                     volume.destroy()
                     self.volumes_mapping_cache.pop(volume_id)
                     self.sync_volumes.pop(volume_id)
-                continue
+                else:
+                    LOG.error(_LE("Sync backup '%s' status failed."),
+                          volume_id)
+                    # volume.update({'status': fields.VolumeStatus.ERROR})
+                    # volume.save()
+                    # self.sync_volumes.pop(volume_id)
+                    continue
 
-            if csd_volume.status == fields.VolumeStatus.ENABLING \
-                    or csd_volume.status == fields.VolumeStatus.DISABLING:
+            if csd_volume.status in (fields.VolumeStatus.ENABLING,
+                                     fields.VolumeStatus.DISABLING,
+                                     fields.VolumeStatus.ATTACHING,
+                                     fields.VolumeStatus.RESTORING_BACKUP,
+                                     fields.VolumeStatus.ROLLING_BACK):
                 continue
             else:
                 volume.update({'status': csd_volume.status})
@@ -190,11 +202,17 @@ class SGServiceProxy(manager.Manager):
                 csd_backup = self.adminSGSClient.backups.get(csd_backup_id)
             except Exception as exc:
                 if type(exc) == NotFound:
-                    LOG.info(_LI("disabling volume %s finished "), backup_id)
+                    LOG.info(_LI("delete backup %s finished "), backup_id)
                     backup.destroy()
                     self.backups_mapping_cache.pop(backup_id)
                     self.sync_backups.pop(backup_id)
-                continue
+                else:
+                    LOG.error(_LE("Sync backup '%s' status failed."),
+                          backup_id)
+                    # backup.update({'status': fields.BackupStatus.ERROR})
+                    # backup.save()
+                    # self.sync_backups.pop(backup_id)
+                    continue
 
             if csd_backup.status in (fields.BackupStatus.CREATING,
                                      fields.BackupStatus.DELETING,
@@ -216,11 +234,17 @@ class SGServiceProxy(manager.Manager):
                 csd_snapshot = self.adminSGSClient.volumes.get(csd_snapshot_id)
             except Exception as exc:
                 if type(exc) == NotFound:
-                    LOG.info(_LI("disabling volume %s finished "), snapshot_id)
+                    LOG.info(_LI("delete snapshot %s finished "), snapshot_id)
                     snapshot.destroy()
                     self.snapshots_mapping_cache.pop(snapshot_id)
                     self.sync_snapshots.pop(snapshot_id)
-                continue
+                else:
+                    LOG.error(_LE("Sync snapshot '%s' status failed."),
+                          snapshot_id)
+                    # snapshot.update({'status': fields.SnapshotStatus.ERROR})
+                    # snapshot.save()
+                    # self.sync_snapshots.pop(snapshot_id)
+                    continue
 
             if csd_snapshot.status in (fields.SnapshotStatus.CREATING,
                                        fields.SnapshotStatus.DELETING):
@@ -228,7 +252,7 @@ class SGServiceProxy(manager.Manager):
             else:
                 snapshot.update({'status': csd_snapshot.status})
                 snapshot.save()
-                self.sync_backups.pop(snapshot_id)
+                self.sync_snapshots.pop(snapshot_id)
 
     def _sync_replications_status(self):
         """ sync cascaded volumes'(in volumes_mapping_cache) replicate-status;
@@ -237,27 +261,29 @@ class SGServiceProxy(manager.Manager):
         """
         for replication_id, replication in self.sync_replications.items():
             master_volume_id = replication['master_volume']
-            slave_volume_id = replication['slave_volume']
             csd_master_volume_id = self._get_csd_volume_id(master_volume_id)
-            csd_slave_volume_id = self._get_csd_volume_id(slave_volume_id)
             try:
                 csd_master_volume = self.adminSGSClient.volumes.get(csd_master_volume_id)
+            except Exception as exc:
+                # master is crash, set csd_master_volume is None
+                if type(exc) == ConnectFailure and \
+                        replication.status == fields.ReplicationStatus.FAILING_OVER:
+                        LOG.info(_LI("replication %s master can not be connected "), replication_id)
+                        csd_master_volume = None
+                else:
+                    LOG.error(_LE("Sync replication '%s' status failed."),
+                          replication_id)
+                    continue
+
+            slave_volume_id = replication['slave_volume']
+            csd_slave_volume_id = self._get_csd_volume_id(slave_volume_id)
+            try:
                 csd_slave_volume = self.adminSGSClient.volumes.get(csd_slave_volume_id)
             except Exception as exc:
-                if type(exc) == NotFound:
-                    LOG.info(_LI("delete replication %s finished "), replication_id)
-                    replication.destroy()
-                    self.volumes_mapping_cache.pop(master_volume_id)
-                    self.volumes_mapping_cache.pop(slave_volume_id)
-                    self.sync_replications.pop(replication_id)
+                LOG.error(_LE("Sync replication '%s' status failed."),
+                          replication_id)
                 continue
 
-            if csd_master_volume.replicate_status in (fields.ReplicateStatus.ENABLING,
-                                               fields.ReplicateStatus.DISABLING,
-                                               fields.ReplicateStatus.DELETING,
-                                               fields.ReplicateStatus.FAILING_OVER,
-                                               fields.ReplicateStatus.REVERSING):
-                continue
             if csd_slave_volume.replicate_status in (fields.ReplicateStatus.ENABLING,
                                                fields.ReplicateStatus.DISABLING,
                                                fields.ReplicateStatus.DELETING,
@@ -265,15 +291,33 @@ class SGServiceProxy(manager.Manager):
                                                fields.ReplicateStatus.REVERSING):
                 continue
             else:
-                master_volume = objects.Volume.get_by_id(master_volume_id)
                 slave_volume = objects.Volume.get_by_id(slave_volume_id)
-                master_volume.update({'replicate_status': csd_master_volume.replicate_status})
-                master_volume.save()
                 slave_volume.update({'replicate_status': csd_slave_volume.replicate_status})
                 slave_volume.save()
-                if master_volume.replicate_status == slave_volume.replicate_status:
-                    replication.update({'status': master_volume.replicate_status})
-                    self.sync_replications.pop(replication_id)
+
+            # master is crash, update replication.status=csd_slave_volume.replicate_status
+            if csd_master_volume is None:
+                replication.update({'status': csd_slave_volume.replicate_status})
+                self.sync_replications.pop(replication_id)
+                continue
+
+            if csd_master_volume.replicate_status in (fields.ReplicateStatus.ENABLING,
+                       fields.ReplicateStatus.DISABLING,
+                       fields.ReplicateStatus.DELETING,
+                       fields.ReplicateStatus.FAILING_OVER,
+                       fields.ReplicateStatus.REVERSING):
+                continue
+            else:
+                master_volume = objects.Volume.get_by_id(master_volume_id)
+                master_volume.update({'replicate_status': csd_master_volume.replicate_status})
+                master_volume.save()
+
+            if master_volume.replicate_status == slave_volume.replicate_status:
+                replication.update({'status': master_volume.replicate_status})
+            elif master_volume.replicate_status == fields.ReplicateStatus.ERROR\
+                or slave_volume.replicate_status == fields.ReplicateStatus.ERROR:
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+            self.sync_replications.pop(replication_id)
 
     def _get_cascaded_sgs_client(self, context=None):
         # TODO(luobin): get cascaded sgs client
@@ -377,8 +421,7 @@ class SGServiceProxy(manager.Manager):
             self.sync_volumes[volume_id] = volume
         except Exception:
             LOG.info(_LE("enable sg volume=%s error"), volume_id)
-            volume.update({'status': fields.VolumeStatus.ERROR})
-            volume.save()
+            self._update_volume_error(volume)
 
     def disable_sg(self, context, volume_id):
         try:
@@ -394,8 +437,7 @@ class SGServiceProxy(manager.Manager):
             self.sync_volumes[volume_id] = volume
         except Exception as err:
             LOG.info(_LE("disable sg volume=%s error"), volume_id)
-            volume.update({'status': fields.VolumeStatus.ERROR})
-            volume.save()
+            self._update_volume_error(volume)
 
     def attach_volume(self, context, volume_id, instance_uuid, host_name,
                       mountpoint, mode):
@@ -439,6 +481,43 @@ class SGServiceProxy(manager.Manager):
                                 mountpoint,
                                 mode)
         LOG.info(_LI("Attach volume completed successfully."))
+        return self.db.volume_attachment_get(context, attachment_id)
+
+    def detach_volume(self, context, volume_id, attachment_id):
+        """Updates db to show volume is detached
+           interface about detach_volume has been realized in nova-proxy
+           cinder-proxy just update cascading level data
+        """
+        LOG.info(_LI("Detach volume with id:'%s'"), volume_id)
+
+        volume = self.db.volume_get(context, volume_id)
+        if attachment_id:
+            try:
+                attachment = self.db.volume_attachment_get(context,
+                                                           attachment_id)
+            except exception.VolumeAttachmentNotFound:
+                LOG.info(_LI("Volume detach called, but volume not attached"))
+                self.db.volume_detached(context, volume_id, attachment_id)
+                return
+        else:
+            attachments = self.db.volume_attachment_get_all_by_volume_id(
+                context, volume_id)
+            if len(attachments) > 1:
+                msg = _("Detach volume failed: More than one attachment, "
+                        "but no attachment_id provide.")
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
+            elif len(attachments) == 1:
+                attachment = attachments[0]
+            else:
+                LOG.info(_LI("Volume detach called, but volume not attached"))
+                self.db.volume_update(context, volume_id,
+                                      {'status': 'available'})
+                return
+
+        self.db.volume_detached(context.elevated(), volume_id,
+                                attachment.get('id'))
+        LOG.info(_LI("Detach volume completed successfully."))
 
     def initialize_connection(self, context, volume_id, connector):
         # just need return None
@@ -463,6 +542,10 @@ class SGServiceProxy(manager.Manager):
                 return csd_backup_id
         except Exception as err:
             raise err
+
+    def _update_volume_error(self, volume):
+        volume.update({'status': fields.VolumeStatus.ERROR})
+        volume.save()
 
     def _update_backup_error(self, backup):
         backup.update({'status': fields.BackupStatus.ERROR})
@@ -701,6 +784,36 @@ class SGServiceProxy(manager.Manager):
             with excutils.save_and_reraise_exception():
                 self._update_snapshot_error(snapshot)
 
+    def rollback_snapshot(self, context, snapshot_id):
+        LOG.info(_LI("Rollback snapshot, snapshot_id %s"), snapshot_id)
+
+        snapshot = object.Snapshot.get_by_id(context, snapshot_id)
+        volume_id = snapshot['volume_id']
+        volume = object.Volume.get_by_id(context, volume_id)
+
+        expected_status = fields.VolumeStatus.ROLLING_BACK
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Rollback snapshot aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            self._update_volume_error(volume)
+            raise exception.InvalidVolume(reason=msg)
+
+        try:
+            # step 2: call rollback snapshot to cascaded level
+            csd_snapshot_id = self._get_csd_snapshot_id(snapshot_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            csd_sgs_client.snapshots.rollback(snapshot_id=csd_snapshot_id)
+
+            # step 3: add to sync status
+            self.snapshots_mapping_cache[snapshot_id] = csd_snapshot_id
+            self.sync_snapshots[snapshot_id] = snapshot
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self._update_snapshot_error(snapshot)
+
     def create_replicate(self, context, volume_id):
         # step 1: check status in cascading level
         volume = objects.Volume.get_by_id(context, volume_id)
@@ -760,7 +873,6 @@ class SGServiceProxy(manager.Manager):
             # step 2: call delete replicate to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            self.driver.enable_replicate(volume=volume)
             csd_sgs_client.replicates.delete(csd_volume_id)
 
             # step 3: add to sync status map
@@ -791,7 +903,6 @@ class SGServiceProxy(manager.Manager):
             # step 2: call enable replicate to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            self.driver.enable_replicate(volume=volume)
             csd_sgs_client.replicates.enable(csd_volume_id)
 
             # step 3: add to sync status map
@@ -824,7 +935,6 @@ class SGServiceProxy(manager.Manager):
             # step 2: call disable replicate to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            self.driver.enable_replicate(volume=volume)
             csd_sgs_client.replicates.disable(csd_volume_id)
 
             # step 3: add to sync status
@@ -854,7 +964,6 @@ class SGServiceProxy(manager.Manager):
             # step 2: call failover replicate to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            self.driver.enable_replicate(volume=volume)
             csd_sgs_client.replicates.failover(csd_volume_id)
 
             # step 3: add to sync status
@@ -882,7 +991,6 @@ class SGServiceProxy(manager.Manager):
             # step 2: call reverse replicate to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            self.driver.enable_replicate(volume=volume)
             csd_sgs_client.replicates.reverse(csd_volume_id)
 
             # step 3: add to sync status
