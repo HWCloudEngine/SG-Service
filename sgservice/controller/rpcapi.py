@@ -112,9 +112,9 @@ class ControllerAPI(object):
         cctxt = self.client.prepare(version='1.0')
         return cctxt.cast(ctxt, 'delete_replicate', volume_id=volume.id)
 
-    def failover_replicate(self, ctxt, volume):
+    def failover_replicate(self, ctxt, volume, force=False):
         cctxt = self.client.prepare(version='1.0')
-        return cctxt.cast(ctxt, 'failover_replicate', volume_id=volume.id)
+        return cctxt.cast(ctxt, 'failover_replicate', volume_id=volume.id, force=force)
 
     def reverse_replicate(self, ctxt, volume):
         cctxt = self.client.prepare(version='1.0')

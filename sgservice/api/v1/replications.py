@@ -228,11 +228,12 @@ class ReplicationsController(wsgi.Controller):
             msg = _("Invalid replication id provided.")
             LOG.error(msg)
             raise exception.InvalidUUID(id)
-
+		force = body.get('force', False)
         context = req.environ['sgservice.context']
         replication = self.service_api.get_replication(context, id)
         replication = self.service_api.failover_replication(context,
-                                                            replication)
+                                                            replication,
+                                                            force)
         return self._view_builder.detail(req, replication)
 
     @wsgi.action('reverse')
