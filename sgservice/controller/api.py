@@ -18,7 +18,7 @@ import six
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
-
+import webob.exc
 from sgservice import context
 from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller import rpcapi as protection_rpcapi
@@ -786,7 +786,7 @@ class API(base.Base):
                     context, replication['id'],
                     {'status': fields.ReplicationStatus.ERROR})
 
-    def failover_replication(self, context, replication):
+    def failover_replication(self, context, replication, force=False):
         if replication['status'] not in [fields.ReplicationStatus.ENABLED]:
             msg = _('Replication to be failed-over must be enabled')
             raise exception.InvalidReplication(reason=msg)
@@ -800,9 +800,22 @@ class API(base.Base):
         slave_volume_id = replication['salve_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
+        master_host = master_volume['host']
         try:
-            self.failover_replicate(context, master_volume)
-            self.failover_replicate(context, slave_volume)
+            master_service = objects.Service.get_by_host_and_topic(
+                context, master_host, CONF.controller_topic)
+        except exception.ServiceNotFound:
+            raise webob.exc.HTTPNotFound(explanation=_("Host not found"))
+        master_is_up = master_service.is_up()
+
+        if not master_is_up and not force:
+            msg = _('master service is down, set force=True to force failover')
+            raise exception.InvalidReplication(reason=msg)
+
+        try:
+            if master_is_up:
+                self.failover_replicate(context, master_volume, force)
+            self.failover_replicate(context, slave_volume, force)
         except Exception:
             with excutils.save_and_reraise_exception():
                 self.db.replication_update(
@@ -906,7 +919,7 @@ class API(base.Base):
 
         self.controller_rpcapi.delete_replicate(context, volume)
 
-    def failover_replicate(self, context, volume):
+    def failover_replicate(self, context, volume, force=False):
         if volume['replicate_status'] not in ['enabled']:
             msg = (_('Replicate-status of failover-replicate volume must '
                      'be enabled, but current status is "%s".') %
@@ -917,7 +930,7 @@ class API(base.Base):
             context, volume['id'],
             {'replicate_status': fields.ReplicateStatus.FAILING_OVER})
 
-        self.controller_rpcapi.failover_replicate(context, volume)
+        self.controller_rpcapi.failover_replicate(context, volume, force)
         return volume
 
     def reverse_replicate(self, context, volume):

@@ -742,7 +742,7 @@ class ControllerManager(manager.Manager):
             'volume': volume
         }
 
-    def failover_replicate(self, context, volume_id):
+    def failover_replicate(self, context, volume_id, force=False):
         LOG.info(_LI("Failover replicate started, volume:%s"), volume_id)
         volume = objects.Volume.get_by_id(context, volume_id)
 
