@@ -24,14 +24,14 @@ from sgservice import exception
 from sgservice.i18n import _, _LI
 from sgservice import utils
 
-query_replication_filters_opts = cfg.ListOpt(
-    'query_replication_filters',
+query_volume_filters_opts = cfg.ListOpt(
+    'query_volume_filters',
     default=['name', 'status'],
-    help='Replication filter options which non-admin user could use to query '
-         'replications.')
+    help='Volume filter options which non-admin user could use to query '
+         'volumes.')
 
 CONF = cfg.CONF
-CONF.register_opt(query_replication_filters_opts)
+CONF.register_opt(query_volume_filters_opts)
 
 LOG = logging.getLogger(__name__)
 
@@ -100,8 +100,8 @@ class VolumesController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(VolumesController, self).__init__()
 
-    def _get_replication_filter_options(self):
-        return CONF.query_replication_filters
+    def _get_volume_filter_options(self):
+        return CONF.query_volume_filters
 
     def show(self, req, id):
         """Return data about the given volumes."""
@@ -120,7 +120,7 @@ class VolumesController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_volume_filter_options())
         utils.check_filters(filters)
 
         volumes = self.service_api.get_all(
@@ -229,8 +229,10 @@ class VolumesController(wsgi.Controller):
         instance_uuid = params.get('instance_uuid', None)
         host_name = params.get('host_name', None)
         mountpoint = params.get('mountpoint', None)
-        mode = params.get('mode', 'rw')
 
+        mode = params.get('mode', None)
+        if mode is None:
+            mode = 'rw'
         if instance_uuid is None and host_name is None:
             msg = _("Invalid request to attach volume to an invalid target")
             raise webob.exc.HTTPBadRequest(explanation=msg)
