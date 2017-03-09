@@ -92,7 +92,7 @@ class ISCSISGDriver(SGDriver):
 
     def initialize_connection(self, context, volume, connector=None):
         driver_data = jsonutils.loads(volume['driver_data'])
-        driver_type = driver_data['driver_data']
+        driver_type = driver_data['driver_type']
         connection_info = {}
         if driver_type == 'iscsi':
             # iscsi mode

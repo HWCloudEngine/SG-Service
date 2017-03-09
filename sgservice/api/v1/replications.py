@@ -23,10 +23,18 @@ from sgservice.api.openstack import wsgi
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
+from sgservice.objects import fields
 from sgservice import utils
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+
+query_replication_filters_opts = cfg.ListOpt(
+    'query_replication_filters',
+    default=['name', 'status'],
+    help='Replication filter options which non-admin user could use to query '
+         'replications.')
+CONF.register_opt(query_replication_filters_opts)
 
 
 class ReplicationViewBuilder(common.ViewBuilder):
@@ -93,6 +101,9 @@ class ReplicationsController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(ReplicationsController, self).__init__()
 
+    def _get_replication_filter_options(self):
+        return CONF.query_replication_filters
+
     def show(self, req, id):
         """Return data about the given replications."""
         LOG.info(_LI("Show replication with id: %s"), id)
@@ -157,9 +168,12 @@ class ReplicationsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = replication.get('name', 'replication-%s:%s' %
-                               (master_volume_id, slave_volume_id))
-        description = replication.get('description', name)
+        name = replication.get('name')
+        if name is None:
+            name = 'replication-%s:%s' % (master_volume_id, slave_volume_id)
+        description = replication.get('description')
+        if description is None:
+            description = name
 
         if not uuidutils.is_uuid_like(master_volume_id):
             msg = _("Invalid master volume id provided.")
@@ -172,9 +186,9 @@ class ReplicationsController(wsgi.Controller):
             raise exception.InvalidUUID(slave_volume_id)
 
         master_volume = self.service_api.get(context, master_volume_id)
-        salve_volume = self.service_api.get(context, slave_volume_id)
+        slave_volume = self.service_api.get(context, slave_volume_id)
         replication = self.service_api.create_replication(
-            context, name, description, master_volume, salve_volume)
+            context, name, description, master_volume, slave_volume)
         return self._view_builder.detail(req, replication)
 
     def update(self, req, id, body):
@@ -228,12 +242,11 @@ class ReplicationsController(wsgi.Controller):
             msg = _("Invalid replication id provided.")
             LOG.error(msg)
             raise exception.InvalidUUID(id)
-        force = body.get('force', False)
+
         context = req.environ['sgservice.context']
         replication = self.service_api.get_replication(context, id)
         replication = self.service_api.failover_replication(context,
-                                                            replication,
-                                                            force)
+                                                            replication)
         return self._view_builder.detail(req, replication)
 
     @wsgi.action('reverse')
@@ -250,6 +263,27 @@ class ReplicationsController(wsgi.Controller):
         replication = self.service_api.reverse_replication(context,
                                                            replication)
         return self._view_builder.detail(req, replication)
+
+    @wsgi.action('reset_status')
+    def reset_status(self, req, id, body):
+        """reset replication status"""
+        LOG.info(_LI("Reset replication status, id: %s"), id)
+        if not uuidutils.is_uuid_like(id):
+            msg = _("Invalid replication id provided.")
+            LOG.error(msg)
+            raise exception.InvalidUUID(id)
+
+        status = body['reset_status'].get('status', None)
+        if status not in fields.ReplicationStatus.ALL:
+            msg = _("Invalid status provided.")
+            LOG.error(msg)
+            raise exception.InvalidStatus(status)
+
+        context = req.environ['sgservice.context']
+        replication = self.service_api.get_replication(context, id)
+        replication.status = status
+        replication.save()
+        return webob.Response(status_int=202)
 
 
 def create_resource():
