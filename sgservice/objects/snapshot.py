@@ -62,24 +62,22 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
     def volume_name(self):
         return self.volume.name
 
-    @classmethod
-    def _get_expected_attrs(cls, context, *args, **kwargs):
-        return cls.OPTIONAL_FIELDS
 
     @classmethod
     def _from_db_object(cls, context, snapshot, db_snapshot,
                         expected_attrs=None):
         if expected_attrs is None:
-            expected_attrs = cls._get_expected_attrs(context)
-
+            expected_attrs = []
         for name, field in snapshot.fields.items():
+            if name in snapshot.OPTIONAL_FIELDS:
+                continue
             value = db_snapshot.get(name)
             if isinstance(field, fields.IntegerField):
                 value = value if value is not None else 0
             setattr(snapshot, name, value)
 
         if 'volume' in expected_attrs:
-            db_volume = db_snapshot.get('volume')
+            db_volume = db_snapshot.get('volume', None)
             if db_volume:
                 snapshot.volume = objects.Volume._from_db_object(
                     context, objects.Volume(), db_volume)

@@ -20,6 +20,7 @@ from sgservice import exception
 from sgservice.i18n import _
 from sgservice import objects
 from sgservice.objects import base
+from sgservice.objects import fields as s_fields
 
 CONF = cfg.CONF
 
@@ -37,7 +38,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'user_id': fields.StringField(),
         'project_id': fields.StringField(),
         'host': fields.UUIDField(nullable=True),
-        'status': fields.StringField(nullable=True),
+        'status': s_fields.VolumeStatusField(nullable=True),
         'previous_status': fields.StringField(nullable=True),
         'display_name': fields.StringField(nullable=True),
         'display_description': fields.StringField(nullable=True),
@@ -46,7 +47,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'replication_zone': fields.StringField(nullable=True),
         'replication_id': fields.UUIDField(nullable=True),
         'peer_volume': fields.UUIDField(nullable=True),
-        'replicate_status': fields.StringField(nullable=True),
+        'replicate_status': s_fields.ReplicateStatusField(nullable=True),
         'replicate_mode': fields.StringField(nullable=True),
         'access_mode': fields.StringField(nullable=True),
         'driver_data': fields.StringField(nullable=True),
@@ -68,7 +69,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         if expected_attrs is None:
             expected_attrs = []
         for name, field in volume.fields.items():
-            if name in cls.OPTIONAL_FIELDS:
+            if name in volume.OPTIONAL_FIELDS:
                 continue
             value = db_volume.get(name)
             if isinstance(field, fields.IntegerField):
