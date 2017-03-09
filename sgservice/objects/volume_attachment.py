@@ -55,15 +55,10 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
         return self.volume.host
 
     @classmethod
-    def _get_expected_attrs(cls, context, *args, **kwargs):
-        return ['volume']
-
-    @classmethod
     def _from_db_object(cls, context, attachment, db_attachment,
                         expected_attrs=None):
         if expected_attrs is None:
-            expected_attrs = cls._get_expected_attrs(context)
-
+            expected_attrs = []
         for name, field in attachment.fields.items():
             if name in cls.OPTIONAL_FIELDS:
                 continue
@@ -73,7 +68,7 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
             attachment[name] = value
 
         if 'volume' in expected_attrs:
-            db_volume = db_attachment.get('volume')
+            db_volume = db_attachment.get('volume', None)
             if db_volume:
                 attachment.volume = objects.Volume._from_db_object(
                     context, objects.Volume(), db_volume)

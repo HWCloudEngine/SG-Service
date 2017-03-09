@@ -59,6 +59,7 @@ class APIRouter(wsgi_common.Router):
         mapper.resource("checkpoint", "checkpoints",
                         controller=checkpoints_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST', 'rollback': 'POST'})
+                        member={'action': 'POST', 'rollback': 'POST',
+                                'reset_status': 'POST'})
 
         super(APIRouter, self).__init__(mapper)

@@ -191,19 +191,19 @@ class API(base.Base):
                     'Unable disable-sg this volume with snapshot or backup.')
                 raise exception.InvalidVolume(reason=msg)
 
-        excepted = {'status': ('available', 'error', 'deleting')}
-        values = {'status': 'deleting'}
+        excepted_status = [fields.SnapshotStatus.AVAILABLE,
+                           fields.SnapshotStatus.ERROR,
+                           fields.SnapshotStatus.DELETING]
         if cascade:
             for s in snapshots:
-                result = s.conditional_update(values, excepted)
-                if not result:
-                    volume.update({'status': fields.VolumeStatus.ERROR})
-                    volume.save()
-
+                if s['status'] not in excepted_status:
                     msg = _('Failed to update snapshot.')
                     raise exception.InvalidVolume(reason=msg)
+                else:
+                    s.update({'status': fields.SnapshotStatus.DELETING})
+                    s.save()
 
-        volume.update({'status': 'disabling'})
+        volume.update({'status': fields.VolumeStatus.DISABLING})
         volume.save()
         self.controller_rpcapi.disable_sg(context, volume=volume,
                                           cascade=cascade)
@@ -232,16 +232,14 @@ class API(base.Base):
         if context.is_admin and all_tenants:
             # Need to remove all_tenants to pass the filtering below.
             del filters['all_tenants']
-            volumes = objects.VolumeList.get_all(context, marker, limit,
-                                                 sort_keys=sort_keys,
-                                                 sort_dirs=sort_dirs,
-                                                 filters=filters,
-                                                 offset=offset)
+            volumes = objects.VolumeList.get_all(
+                context, marker=marker, limit=limit, sort_keys=sort_keys,
+                sort_dirs=sort_dirs, filters=filters, offset=offset)
         else:
             volumes = objects.VolumeList.get_all_by_project(
-                context, context.project_id, marker, limit,
-                sort_keys=sort_keys, sort_dirs=sort_dirs, filters=filters,
-                offset=offset)
+                context, project_id=context.project_id, marker=marker,
+                limit=limit, sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
 
         LOG.info(_LI("Get all volumes completed successfully."))
         return volumes
@@ -253,41 +251,50 @@ class API(base.Base):
                    % {'vol_id': volume.id,
                       'status': volume.status})
             raise exception.InvalidVolume(reason=msg)
-        volume.update({'status': 'attaching'})
+        volume.update({'status': fields.VolumeStatus.ATTACHING})
         volume.save()
         LOG.info(_LI("Reserve volume completed successfully."))
 
     def unreserve_volume(self, context, volume):
-        expected = {'status': 'attaching'}
-        value = {'status': 'enabled'}
-        result = volume.conditional_update(value, expected)
-        if not result:
-            msg = (_('Unable to unreserve volume. Volume %(vol_id)s to be '
-                     'unreserved status must be attaching, but current '
-                     'status is %(status)s.')
-                   % {'vol_id': volume.id,
-                      'status': volume.status})
+        expected_status = fields.VolumeStatus.ATTACHING
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Unreserve volume aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
             raise exception.InvalidVolume(reason=msg)
+
+        volume.update({'status': fields.VolumeStatus.ENABLED})
+        volume.save()
         LOG.info(_LI("Unreserve volume completed successfully."))
 
     def begin_detaching(self, context, volume):
-        expected = {'status': 'in-use'}
-        value = {'status': 'detaching'}
-        result = volume.conditional_update(value, expected)
-
-        if not result:
-            msg = (_('Unable to detach volume. Volume %(vol_id)s to be '
-                     'unreserved  status  must be in-use, but current '
-                     'status is %(status)s.')
-                   % {'vol_id': volume.id,
-                      'status': volume.status})
+        expected_status = fields.VolumeStatus.IN_USE
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Begin detaching volume aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
             raise exception.InvalidVolume(reason=msg)
+
+        volume.update({'status': fields.VolumeStatus.DETACHING})
+        volume.save()
         LOG.info(_LI("Begin detaching volume completed successfully."))
 
     def roll_detaching(self, context, volume):
-        expected = {'status': 'detaching'}
-        value = {'status': 'in-use'}
-        volume.conditional_update(value, expected)
+        expected_status = fields.VolumeStatus.DETACHING
+        actual_status = volume['status']
+        if actual_status != expected_status:
+            msg = (_('Roll detaching volume aborted, expected volume status '
+                     '%(expected_status)% but got %(actual_status)s')
+                   % {'expected_status': expected_status,
+                      'actual_status': actual_status})
+            raise exception.InvalidVolume(reason=msg)
+
+        volume.update({'status': fields.VolumeStatus.IN_USE})
+        volume.save()
         LOG.info(_LI("Roll detaching of volume completed successfully."))
 
     def attach(self, context, volume, instance_uuid, host_name, mountpoint,
@@ -339,15 +346,15 @@ class API(base.Base):
             raise exception.InvalidVolume(reason=msg)
 
         previous_status = volume['status']
-        self.db.volume_update(context, volume['id'],
-                              {'status': fields.VolumeStatus.BACKING_UP,
-                               'previous_status': previous_status})
+        volume.update({'status': fields.VolumeStatus.BACKING_UP,
+                       'previous_status': previous_status})
+        volume.save()
         backup = None
         host = volume['host']
         try:
             kwargs = {
                 'host': host,
-                'use_id': context.user_id,
+                'user_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,
                 'display_description': description,
@@ -366,8 +373,8 @@ class API(base.Base):
             with excutils.save_and_reraise_exception():
                 if backup and 'id' in backup:
                     backup.destroy()
-                self.db.volume_update(context, volume['id'],
-                                      {'status': previous_status})
+                volume.update({'status': previous_status})
+                volume.save()
 
         self.controller_rpcapi.create_backup(context, backup)
         return backup
@@ -396,11 +403,11 @@ class API(base.Base):
 
         backup_type = backup['type']
         if backup_type == 'local':
-            if backup['availability_zone'] != c_volume['availability_zone']:
+            if backup['availability_zone'] != c_volume.availability_zone:
                 msg = _('Local backup and volume are not in the same zone')
                 raise exception.InvalidVolume(reason=msg)
         else:
-            if backup['replication_zone'] != c_volume['availability_zone']:
+            if backup['replication_zone'] != c_volume.availability_zone:
                 msg = _('Remote backup and volume are not in the same zone')
                 raise exception.InvalidVolume(reason=msg)
 
@@ -411,8 +418,8 @@ class API(base.Base):
 
         restore = {
             'backup_id': backup['id'],
-            'volume_id': c_volume['id'],
-            'volume_name': c_volume['display_name']
+            'volume_id': c_volume.id,
+            'volume_name': c_volume.name
         }
 
         return restore
@@ -440,16 +447,14 @@ class API(base.Base):
         if context.is_admin and all_tenants:
             # Need to remove all_tenants to pass the filtering below.
             del filters['all_tenants']
-            backups = objects.BackupList.get_all(context, marker, limit,
-                                                 sort_keys=sort_keys,
-                                                 sort_dirs=sort_dirs,
-                                                 filters=filters,
-                                                 offset=offset)
+            backups = objects.BackupList.get_all(
+                context, marker=marker, limit=limit, sort_keys=sort_keys,
+                sort_dirs=sort_dirs, filters=filters, offset=offset)
         else:
             backups = objects.BackupList.get_all_by_project(
-                context, context.project_id, marker, limit,
-                sort_keys=sort_keys, sort_dirs=sort_dirs, filters=filters,
-                offset=offset)
+                context, project_id=context.project_id, marker=marker,
+                limit=limit, sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
 
         LOG.info(_LI("Get all backups completed successfully."))
         return backups
@@ -482,7 +487,7 @@ class API(base.Base):
 
             kwargs = {
                 'host': host,
-                'use_id': context.user_id,
+                'user_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,
                 'display_description': description,
@@ -510,8 +515,8 @@ class API(base.Base):
             msg = _('Snapshot to be deleted must be available or error')
             raise exception.InvalidSnapshot(reason=msg)
 
-        self.db.snapshot_update(context, snapshot['id'],
-                                {'status': fields.SnapshotStatus.DELETING})
+        snapshot.update({'status': fields.SnapshotStatus.DELETING})
+        snapshot.save()
         self.controller_rpcapi.delete_snapshot(context, snapshot)
 
     def get_all_snapshots(self, context, marker=None, limit=None,
@@ -538,16 +543,14 @@ class API(base.Base):
         if context.is_admin and all_tenants:
             # Need to remove all_tenants to pass the filtering below.
             del filters['all_tenants']
-            snapshots = objects.SnapshotList.get_all(context, marker, limit,
-                                                     sort_keys=sort_keys,
-                                                     sort_dirs=sort_dirs,
-                                                     filters=filters,
-                                                     offset=offset)
+            snapshots = objects.SnapshotList.get_all(
+                context, marker=marker, limit=limit, sort_keys=sort_keys,
+                sort_dirs=sort_dirs, filters=filters, offset=offset)
         else:
             snapshots = objects.SnapshotList.get_all_by_project(
-                context, context.project_id, marker, limit,
-                sort_keys=sort_keys, sort_dirs=sort_dirs, filters=filters,
-                offset=offset)
+                context, project_id=context.project_id, marker=marker,
+                limit=limit, sort_keys=sort_keys, sort_dirs=sort_dirs,
+                filters=filters, offset=offset)
 
         LOG.info(_LI("Get all snapshots completed successfully."))
         return snapshots
@@ -591,9 +594,9 @@ class API(base.Base):
                 msg = (_('The specified checkpoint must be available, '
                          'but current is %s'), checkpoint['status'])
                 raise exception.InvalidCheckpoint(reason=msg)
-            master_snapshot = object.Snapshot.get_by_id(
+            master_snapshot = objects.Snapshot.get_by_id(
                 context, checkpoint['master_snapshot'])
-            slave_snapshot = object.Snapshot.get_by_id(
+            slave_snapshot = objects.Snapshot.get_by_id(
                 context, checkpoint['slave_snapshot'])
             if availability_zone is None:
                 availability_zone = master_snapshot['availability_zone']
@@ -612,13 +615,15 @@ class API(base.Base):
             LOG.error(msg)
             raise exception.InvalidInput(reason=msg)
 
+        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
         cinder_client = ClientFactory.create_client("cinder", context)
         try:
             cinder_volume = cinder_client.volumes.create(
                 name=name,
                 description=description,
                 volume_type=volume_type,
-                availability_zone=availability_zone)
+                availability_zone=availability_zone,
+                size=volume['size'])
         except Exception as err:
             msg = (_("Using cinder-client to create new volume failed, "
                      "err: %s."), err)
@@ -634,7 +639,7 @@ class API(base.Base):
                      resource=replication)
             return replication
         except Exception:
-            raise exception.SnapshotNotFound(replication_id)
+            raise exception.ReplicationNotFound(replication_id)
 
     def create_replication(self, context, name, description, master_volume,
                            slave_volume):
@@ -644,17 +649,23 @@ class API(base.Base):
                      'or in-use, but current status is "%s".') %
                    master_volume['status'])
             raise exception.InvalidVolume(reason=msg)
+        if master_volume['replication_id'] is not None:
+            msg = (_('Master volume already belong to one replication'))
+            raise exception.InvalidVolume(reason=msg)
 
         if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
             msg = (_('Slave volume of a replication should be enabled, '
                      'but current status is "%s".') %
                    slave_volume['status'])
             raise exception.InvalidVolume(reason=msg)
+        if slave_volume['replication_id'] is not None:
+            msg = (_('Slave volume already belong to one replication'))
+            raise exception.InvalidVolume(reason=msg)
 
         replication = None
         try:
             kwargs = {
-                'use_id': context.user_id,
+                'user_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,
                 'display_description': description,
@@ -671,10 +682,10 @@ class API(base.Base):
                     replication.destroy()
 
         try:
-            self.create_replicate(context, master_volume, replication['id'],
-                                  constants.REP_MASTER, slave_volume['id'])
-            self.create_replicate(context, slave_volume, replication['id'],
-                                  constants.REP_SLAVE, master_volume['id'])
+            self.create_replicate(context, master_volume, constants.REP_MASTER,
+                                  replication['id'], slave_volume['id'])
+            self.create_replicate(context, slave_volume, constants.REP_SLAVE,
+                                  replication['id'], master_volume['id'])
         except Exception:
             with excutils.save_and_reraise_exception():
                 replication.destroy()
@@ -686,13 +697,11 @@ class API(base.Base):
             msg = _('Replication to be deleted must be disabled')
             raise exception.InvalidReplication(reason=msg)
 
-        self.db.replication_update(
-            context, replication['id'],
-            {'status': fields.ReplicationStatus.DELETING})
-
+        replication.update({'status': fields.ReplicationStatus.DELETING})
+        replication.save()
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['salve_volume']
+        slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
@@ -700,9 +709,8 @@ class API(base.Base):
             self.delete_replicate(context, slave_volume)
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.db.replication_update(
-                    context, replication['id'],
-                    {'status': fields.ReplicationStatus.ERROR})
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+                replication.save()
 
     def get_all_replications(self, context, marker=None, limit=None,
                              sort_keys=None, sort_dirs=None, filters=None,
@@ -729,13 +737,13 @@ class API(base.Base):
             # Need to remove all_tenants to pass the filtering below.
             del filters['all_tenants']
             replications = objects.ReplicationList.get_all(
-                context, marker, limit,
+                context, marker=marker, limit=limit,
                 sort_keys=sort_keys, sort_dirs=sort_dirs,
                 filters=filters, offset=offset)
         else:
             replications = objects.ReplicationList.get_all_by_project(
-                context, context.project_id, marker, limit,
-                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                context, project_id=context.project_id, marker=marker,
+                limit=limit, sort_keys=sort_keys, sort_dirs=sort_dirs,
                 filters=filters, offset=offset)
 
         LOG.info(_LI("Get all replications completed successfully."))
@@ -748,13 +756,11 @@ class API(base.Base):
                     'failed-over')
             raise exception.InvalidReplication(reason=msg)
 
-        self.db.replication_update(
-            context, replication['id'],
-            {'status': fields.ReplicationStatus.ENABLING})
-
+        replication.update({'status': fields.ReplicationStatus.ENABLING})
+        replication.save()
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['salve_volume']
+        slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
@@ -762,9 +768,10 @@ class API(base.Base):
             self.enable_replicate(context, slave_volume)
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.db.replication_update(
-                    context, replication['id'],
-                    {'status': fields.ReplicationStatus.ERROR})
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+                replication.save()
+
+        return replication
 
     def disable_replication(self, context, replication):
         if replication['status'] not in [fields.ReplicationStatus.ENABLED,
@@ -773,13 +780,11 @@ class API(base.Base):
                     'failed-over')
             raise exception.InvalidReplication(reason=msg)
 
-        self.db.replication_update(
-            context, replication['id'],
-            {'status': fields.ReplicationStatus.DISABLING})
-
+        replication.update({'status': fields.ReplicationStatus.DISABLING})
+        replication.save()
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['salve_volume']
+        slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
@@ -787,58 +792,45 @@ class API(base.Base):
             self.disable_replicate(context, slave_volume)
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.db.replication_update(
-                    context, replication['id'],
-                    {'status': fields.ReplicationStatus.ERROR})
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+                replication.save()
 
-    def failover_replication(self, context, replication, force=False):
+        return replication
+
+    def failover_replication(self, context, replication):
         if replication['status'] not in [fields.ReplicationStatus.ENABLED]:
             msg = _('Replication to be failed-over must be enabled')
             raise exception.InvalidReplication(reason=msg)
 
-        self.db.replication_update(
-            context, replication['id'],
-            {'status': fields.ReplicationStatus.FAILING_OVER})
+        replication.update({'status': fields.ReplicationStatus.FAILING_OVER})
+        replication.save()
 
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['salve_volume']
+        slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
-        master_host = master_volume['host']
         try:
-            master_service = objects.Service.get_by_host_and_topic(
-                context, master_host, CONF.controller_topic)
-        except exception.ServiceNotFound:
-            raise webob.exc.HTTPNotFound(explanation=_("Host not found"))
-        master_is_up = master_service.is_up()
-
-        if not master_is_up and not force:
-            msg = _('master service is down, set force=True to force failover')
-            raise exception.InvalidReplication(reason=msg)
-
-        try:
-            if master_is_up:
-                self.failover_replicate(context, master_volume, force)
-            self.failover_replicate(context, slave_volume, force)
+            self.failover_replicate(context, master_volume)
+            self.failover_replicate(context, slave_volume)
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.db.replication_update(
-                    context, replication['id'],
-                    {'status': fields.ReplicationStatus.ERROR})
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+                replication.save()
+
+        return replication
 
     def reverse_replication(self, context, replication):
         if replication['status'] not in [fields.ReplicationStatus.FAILED_OVER]:
             msg = _('Replication to be reversed must be failed-over')
             raise exception.InvalidReplication(reason=msg)
 
-        self.db.replication_update(
-            context, replication['id'],
-            {'status': fields.ReplicationStatus.REVERSING})
+        replication.update({'status': fields.ReplicationStatus.REVERSING})
+        replication.save()
 
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['salve_volume']
+        slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
@@ -846,15 +838,16 @@ class API(base.Base):
             self.reverse_replicate(context, slave_volume)
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.db.replication_update(
-                    context, replication['id'],
-                    {'status': fields.ReplicationStatus.ERROR})
+                replication.update({'status': fields.ReplicationStatus.ERROR})
+                replication.save()
+
+        return replication
 
     def create_replicate(self, context, volume, mode, replication_id,
                          peer_volume):
         if volume['replicate_status'] is not None:
-            msg = (_('Replicate-status of disable-replicate volume must '
-                     'be enabled failed-over, but current status is "%s".') %
+            msg = (_('Replicate-status of create-replicate volume must '
+                     'be None, but current status is "%s".') %
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -876,13 +869,12 @@ class API(base.Base):
             access_mode = constants.ACCESS_RW
         else:
             access_mode = constants.ACCESS_RO
-        self.db.volume_update(
-            context, volume['id'],
-            {'replicate_status': fields.ReplicateStatus.ENABLING,
-             'replication_id': replication_id,
-             'replicate_mode': mode,
-             'peer_volume': peer_volume,
-             'access_mode': access_mode})
+        volume.update({'replicate_status': fields.ReplicateStatus.ENABLING,
+                       'replication_id': replication_id,
+                       'replicate_mode': mode,
+                       'peer_volume': peer_volume,
+                       'access_mode': access_mode})
+        volume.save()
 
         self.controller_rpcapi.create_replicate(context, volume)
         return volume
@@ -897,9 +889,8 @@ class API(base.Base):
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        self.db.volume_update(
-            context, volume['id'],
-            {'replicate_status': fields.ReplicateStatus.ENABLING})
+        volume.update({'replicate_status': fields.ReplicateStatus.ENABLING})
+        volume.save()
 
         self.controller_rpcapi.enable_replicate(context, volume)
         return volume
@@ -914,10 +905,8 @@ class API(base.Base):
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        self.db.volume_update(
-            context, volume['id'],
-            {'replicate_status': fields.ReplicateStatus.DISABLING})
-
+        volume.update({'replicate_status': fields.ReplicateStatus.DISABLING})
+        volume.save()
         self.controller_rpcapi.disable_replicate(context, volume)
         return volume
 
@@ -933,29 +922,21 @@ class API(base.Base):
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        self.db.volume_update(
-            context, volume['id'],
-            {'replicate_status': fields.ReplicateStatus.DELETING})
-
+        volume.update({'replicate_status': fields.ReplicateStatus.DELETING})
+        volume.save()
         self.controller_rpcapi.delete_replicate(context, volume)
 
-<<<<<<< HEAD
     def failover_replicate(self, context, volume, force=False):
-        if volume['replicate_status'] not in ['enabled']:
-=======
-    def failover_replicate(self, context, volume):
         if volume['replicate_status'] not in [fields.ReplicateStatus.ENABLED]:
->>>>>>> 7e37690... Implement sg-driver
             msg = (_('Replicate-status of failover-replicate volume must '
                      'be enabled, but current status is "%s".') %
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        self.db.volume_update(
-            context, volume['id'],
+        volume.update(
             {'replicate_status': fields.ReplicateStatus.FAILING_OVER})
-
-        self.controller_rpcapi.failover_replicate(context, volume, force)
+        volume.save()
+        self.controller_rpcapi.failover_replicate(context, volume)
         return volume
 
     def reverse_replicate(self, context, volume):
@@ -967,9 +948,8 @@ class API(base.Base):
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
-        self.db.volume_update(
-            context, volume['id'],
-            {'replicate_status': fields.ReplicateStatus.REVERSING})
+        volume.update({'replicate_status': fields.ReplicateStatus.REVERSING})
+        volume.save()
 
         self.controller_rpcapi.reverse_replicate(context, volume)
         return volume
@@ -989,10 +969,8 @@ class API(base.Base):
             msg = _('Checkpoint to be deleted must be available')
             raise exception.InvalidCheckpoint(reason=msg)
 
-        self.db.checkpoint_update(
-            context, checkpoint['id'],
-            {'status': fields.CheckpointStatus.DELETING})
-
+        checkpoint.update({'status': fields.CheckpointStatus.DELETING})
+        checkpoint.save()
         master_snapshot = objects.Snapshot.get_by_id(
             context, checkpoint['master_snapshot'])
         slave_snapshot = objects.Snapshot.get_by_id(
@@ -1014,7 +992,7 @@ class API(base.Base):
         checkpoint = None
         try:
             kwargs = {
-                'use_id': context.user_id,
+                'user_id': context.user_id,
                 'project_id': context.project_id,
                 'display_name': name,
                 'display_description': description,
@@ -1030,18 +1008,23 @@ class API(base.Base):
                     checkpoint.destroy()
 
         try:
+            snapshot_name = 'snapshot-checkpoint-%s' % checkpoint.id
+            snapshot_description = snapshot_name
             slave_volume = objects.Volume.get_by_id(
                 context, replication['slave_volume'])
-            slave_snapshot = self.create_snapshot(context, None, None,
+            slave_snapshot = self.create_snapshot(context, snapshot_name,
+                                                  snapshot_description,
                                                   slave_volume,
                                                   checkpoint['id'])
             master_volume = objects.Volume.get_by_id(
                 context, replication['master_volume'])
-            master_snapshot = self.create_snapshot(context, None, None,
+            master_snapshot = self.create_snapshot(context, snapshot_name,
+                                                   snapshot_description,
                                                    master_volume,
                                                    checkpoint['id'])
             checkpoint.update({'master_snapshot': master_snapshot['id'],
                                'slave_snapshot': slave_snapshot['id']})
+            checkpoint.save()
             return checkpoint
         except Exception:
             with excutils.save_and_reraise_exception():
@@ -1073,13 +1056,13 @@ class API(base.Base):
             # Need to remove all_tenants to pass the filtering below.
             del filters['all_tenants']
             checkpoints = objects.CheckpointList.get_all(
-                context, marker, limit,
+                context, marker=marker, limit=limit,
                 sort_keys=sort_keys, sort_dirs=sort_dirs,
                 filters=filters, offset=offset)
         else:
             checkpoints = objects.CheckpointList.get_all_by_project(
-                context, context.project_id, marker, limit,
-                sort_keys=sort_keys, sort_dirs=sort_dirs,
+                context, project_id=context.project_id, marker=marker,
+                limit=limit, sort_keys=sort_keys, sort_dirs=sort_dirs,
                 filters=filters, offset=offset)
 
         LOG.info(_LI("Get all checkpoints completed successfully."))
