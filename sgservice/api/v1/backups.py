@@ -19,6 +19,7 @@ import webob
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
+from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
@@ -27,8 +28,12 @@ from sgservice import utils
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
-SUPPORT_BACKUP_TYPE = ['full', 'incremental']
-SUPPORT_BACKUP_DESTINATION = ['local', 'remote']
+query_backup_filters_opts = cfg.ListOpt(
+    'query_backup_filters',
+    default=['name', 'status', 'volume_id'],
+    help='Backup filter options which non-admin user could use to query '
+         'backups.')
+CONF.register_opt(query_backup_filters_opts)
 
 
 class BackupViewBuilder(common.ViewBuilder):
@@ -105,6 +110,9 @@ class BackupsController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(BackupsController, self).__init__()
 
+    def _get_backup_filter_options(self):
+        return CONF.query_backup_filters
+
     def show(self, req, id):
         """Return data about the given backups."""
         LOG.info(_LI("Show backup, backup_id: %s"), id)
@@ -140,7 +148,7 @@ class BackupsController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_backup_filter_options())
         utils.check_filters(filters)
 
         backups = self.service_api.get_all_backups(
@@ -162,16 +170,24 @@ class BackupsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = backup.get('name', 'backup-%s' % volume_id)
-        description = backup.get('description', name)
+        name = backup.get('name')
+        if name is None:
+            name = 'backup-%s' % volume_id
+        description = backup.get('description')
+        if description is None:
+            description = name
 
-        backup_type = backup.get('type', 'incremental')
-        if backup_type not in SUPPORT_BACKUP_TYPE:
+        backup_type = backup.get('type')
+        if backup_type is None:
+            backup_type = constants.FULL_BACKUP
+        if backup_type not in constants.SUPPORT_BACKUP_TYPES:
             msg = _('backup type should be full or incremental')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        backup_destination = backup.get('destination', 'local')
-        if backup_destination not in SUPPORT_BACKUP_DESTINATION:
+        backup_destination = backup.get('destination')
+        if backup_destination is None:
+            backup_destination = constants.LOCAL_BACKUP
+        if backup_destination not in constants.SUPPORT_BACKUP_DESTINATIONS:
             msg = _('backup destination should be local or remote')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 

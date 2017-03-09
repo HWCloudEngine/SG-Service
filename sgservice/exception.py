@@ -283,3 +283,7 @@ class RollbackFailed(SGServiceException):
 class InvalidVolumeAttachMode(SGServiceException):
     message = _("Invalid attaching mode '%(mode)s' for "
                 "volume %(volume_id)s.")
+
+
+class InvalidStatus(Invalid):
+    message = _("Received a invalid status %(status)s.")

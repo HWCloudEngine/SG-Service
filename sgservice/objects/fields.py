@@ -36,14 +36,17 @@ class VolumeStatus(BaseSGServiceEnum):
     DISABLING = 'disabling'
     DISABLED = 'disabled'
     ATTACHING = 'attaching'
+    DETACHING = 'detaching'
     IN_USE = 'in-use'
     RESTORING_BACKUP = 'restoring_backup'
     ERROR_RESTORING = 'error_restoring'
     ERROR_ATTACHING = 'error_attaching'
     ROLLING_BACK = 'rolling_back'
+    BACKING_UP = 'backing-up'
 
-    ALL = (ERROR, ENABLING, ENABLED, DELETED, DISABLING, DISABLED, ATTACHING, IN_USE,
-           RESTORING_BACKUP, ERROR_RESTORING, ERROR_ATTACHING, ROLLING_BACK)
+    ALL = (ERROR, ENABLING, ENABLED, DELETED, DISABLING, DISABLED,
+           RESTORING_BACKUP, ERROR_RESTORING, ROLLING_BACK, BACKING_UP,
+           ATTACHING, DETACHING, IN_USE, ERROR_ATTACHING)
 
 
 class VolumeStatusField(BaseEnumField):
@@ -61,9 +64,10 @@ class ReplicationStatus(BaseSGServiceEnum):
     FAILING_OVER = 'failing-over'
     FAILED_OVER = 'failed-over'
     REVERSING = 'reversing'
+    CREATING = 'creating'
 
     ALL = (ERROR, ENABLING, ENABLED, DISABLING, DISABLED, DELETING, DELETED,
-           FAILING_OVER, FAILED_OVER, REVERSING)
+           FAILING_OVER, FAILED_OVER, REVERSING, CREATING)
 
 
 class ReplicationStatusField(BaseEnumField):
@@ -81,9 +85,10 @@ class ReplicateStatus(BaseSGServiceEnum):
     FAILING_OVER = 'failing-over'
     FAILED_OVER = 'failed-over'
     REVERSING = 'reversing'
+    CREATING = 'creating'
 
     ALL = (ERROR, ENABLING, ENABLED, DISABLING, DISABLED, DELETING, DELETED,
-           FAILING_OVER, FAILED_OVER, REVERSING)
+           FAILING_OVER, FAILED_OVER, REVERSING, CREATING)
 
 
 class ReplicateStatusField(BaseEnumField):
@@ -97,9 +102,10 @@ class SnapshotStatus(BaseSGServiceEnum):
     DELETING = 'deleting'
     DELETED = 'deleted'
     ERROR_DELETING = 'error_deleting'
+    ROLLING_BACK = 'rolling-back'
 
     ALL = (ERROR, AVAILABLE, CREATING, DELETING, DELETED,
-           ERROR_DELETING)
+           ERROR_DELETING, ROLLING_BACK)
 
 
 class SnapshotStatusField(BaseEnumField):

@@ -130,22 +130,12 @@ class Volume(BASE, SGServiceBase):
     size = Column(Integer)
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
-    replication_id = Column(String(36), ForeignKey("replications.id"),
-                            nullable=True)
+    replication_id = Column(String(36), nullable=True)
     peer_volume = Column(String(36), nullable=True)
     replicate_status = Column(String(64))
     replicate_mode = Column(String(64))
     access_mode = Column(String(64))
     driver_data = Column(Text)
-
-    replication = orm.relationship(
-        Replication,
-        backref='volumes',
-        foreign_keys=replication_id,
-        primaryjoin='and_('
-                    'Replication.id == Volume.replication_id,'
-                    'Replication.deleted == False,'
-                    'Volume.deleted == False)')
 
     @property
     def name(self):
@@ -164,21 +154,12 @@ class Snapshot(BASE, SGServiceBase):
     status = Column(String(64))
     display_name = Column(String(255))
     display_description = Column(String(255))
-    checkpoint_id = Column(String(36), ForeignKey("checkpoints.id"),
-                           nullable=True)
+    checkpoint_id = Column(String(36), nullable=True)
     destination = Column(String(36))
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
     volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
 
-    checkpoint = orm.relationship(
-        Checkpoint,
-        backref='snapshots',
-        foreign_keys=checkpoint_id,
-        primaryjoin='and_('
-                    'Snapshot.checkpoint_id == Checkpoint.id,'
-                    'Snapshot.deleted == 0,'
-                    'Checkpoint.deleted == 0)')
     volume = orm.relationship(
         Volume,
         backref='snapshots',
