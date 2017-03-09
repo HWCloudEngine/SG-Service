@@ -416,7 +416,7 @@ class SGServiceProxy(manager.Manager):
             LOG.info(_LE("enable sg volume=%s error"), volume_id)
             self._update_volume_error(volume)
 
-    def disable_sg(self, context, volume_id):
+    def disable_sg(self, context, volume_id, cascade=False):
         try:
             volume = objects.Volume.get_by_id(context, volume_id)
             # step 1: get cascaded volume_id
@@ -723,10 +723,9 @@ class SGServiceProxy(manager.Manager):
         except Exception as err:
             raise err
 
-    def create_snapshot(self, context, snapshot_id):
+    def create_snapshot(self, context, snapshot_id, volume_id):
         # step 1: check status in cascading level
         snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
-        volume_id = snapshot.volume_id
         objects.Volume.get_by_id(context, volume_id)
 
         expected_status = fields.SnapshotStatus.CREATING
@@ -784,11 +783,9 @@ class SGServiceProxy(manager.Manager):
             with excutils.save_and_reraise_exception():
                 self._update_snapshot_error(snapshot)
 
-    def rollback_snapshot(self, context, snapshot_id):
+    def rollback_snapshot(self, context, snapshot_id, volume_id):
         LOG.info(_LI("Rollback snapshot, snapshot_id %s"), snapshot_id)
-
         snapshot = object.Snapshot.get_by_id(context, snapshot_id)
-        volume_id = snapshot['volume_id']
         volume = object.Volume.get_by_id(context, volume_id)
 
         expected_status = fields.VolumeStatus.ROLLING_BACK
@@ -1011,3 +1008,4 @@ class SGServiceProxy(manager.Manager):
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
+

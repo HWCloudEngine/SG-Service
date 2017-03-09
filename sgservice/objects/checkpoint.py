@@ -37,7 +37,7 @@ class Checkpoint(base.SGServicePersistentObject, base.SGServiceObject,
         'user_id': fields.StringField(),
         'project_id': fields.StringField(),
         'host': fields.StringField(nullable=True),
-        'status': s_fields.ReplicateStatusField(nullable=True),
+        'status': s_fields.CheckpointStatusField(nullable=True),
         'display_name': fields.StringField(nullable=True),
         'display_description': fields.StringField(nullable=True),
         'replication_id': fields.UUIDField(nullable=True),
@@ -56,23 +56,20 @@ class Checkpoint(base.SGServicePersistentObject, base.SGServiceObject,
         return CONF.checkpoint_name_template % self.id
 
     @classmethod
-    def _get_expected_attrs(cls, context, *args, **kwargs):
-        return cls.OPTIONAL_FIELDS
-
-    @classmethod
     def _from_db_object(cls, context, checkpoint, db_checkpoint,
                         expected_attrs=None):
         if expected_attrs is None:
-            expected_attrs = cls._get_expected_attrs(context)
-
+            expected_attrs = []
         for name, field in checkpoint.fields.items():
+            if name in checkpoint.OPTIONAL_FIELDS:
+                continue
             value = db_checkpoint.get(name)
             if isinstance(field, fields.IntegerField):
                 value = value if value is not None else 0
             checkpoint[name] = value
 
         if 'replication' in expected_attrs:
-            db_replication = db_checkpoint.get('replication')
+            db_replication = db_checkpoint.get('replication', None)
             if db_replication:
                 checkpoint.replication = objects.Replication._from_db_object(
                     context, objects.Replication(), db_replication)
