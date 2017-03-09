@@ -24,14 +24,14 @@ from sgservice import exception
 from sgservice.i18n import _, _LI
 from sgservice import utils
 
-query_replication_filters_opts = cfg.ListOpt(
-    'query_replication_filters',
+query_volume_filters_opts = cfg.ListOpt(
+    'query_volume_filters',
     default=['name', 'status'],
-    help='Replication filter options which non-admin user could use to query '
-         'replications.')
+    help='Volume filter options which non-admin user could use to query '
+         'volumes.')
 
 CONF = cfg.CONF
-CONF.register_opt(query_replication_filters_opts)
+CONF.register_opt(query_volume_filters_opts)
 
 LOG = logging.getLogger(__name__)
 
@@ -100,8 +100,8 @@ class VolumesController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(VolumesController, self).__init__()
 
-    def _get_replication_filter_options(self):
-        return CONF.query_replication_filters
+    def _get_volume_filter_options(self):
+        return CONF.query_volume_filters
 
     def show(self, req, id):
         """Return data about the given volumes."""
@@ -120,7 +120,7 @@ class VolumesController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_volume_filter_options())
         utils.check_filters(filters)
 
         volumes = self.service_api.get_all(
@@ -135,11 +135,6 @@ class VolumesController(wsgi.Controller):
     def enable(self, req, id, body):
         """Enable-SG a available volume."""
         LOG.debug('Enable volume SG, volume_id: %s', id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         params = body['enable']
         params = {} if params is None else params
@@ -154,11 +149,6 @@ class VolumesController(wsgi.Controller):
     def disable(self, req, id, body):
         """Disable a enabled-volume."""
         LOG.info(_LI("Disable volume SG, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         volume = self.service_api.disable_sg(context, volume)
@@ -168,11 +158,6 @@ class VolumesController(wsgi.Controller):
     def reserve(self, req, id, body):
         """Mark SG-volume as reserved before attach."""
         LOG.info(_LI("Mark SG-volume as reserved, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         self.service_api.reserve_volume(context, volume)
@@ -182,11 +167,6 @@ class VolumesController(wsgi.Controller):
     def unreserve(self, req, id, body):
         """Unmark volume as reserved."""
         LOG.info(_LI("Unmark volume as reserved, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         self.service_api.unreserve_volume(context, volume)
@@ -196,11 +176,6 @@ class VolumesController(wsgi.Controller):
     def initialize_connection(self, req, id, body):
         """Initialize volume attachment."""
         LOG.info(_LI("Initialize volume attachment, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
 
@@ -216,11 +191,6 @@ class VolumesController(wsgi.Controller):
     def attach(self, req, id, body):
         """Add sg-volume attachment metadata."""
         LOG.info(_LI("Add SG-volume attachment, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
 
@@ -229,8 +199,10 @@ class VolumesController(wsgi.Controller):
         instance_uuid = params.get('instance_uuid', None)
         host_name = params.get('host_name', None)
         mountpoint = params.get('mountpoint', None)
-        mode = params.get('mode', 'rw')
 
+        mode = params.get('mode', None)
+        if mode is None:
+            mode = 'rw'
         if instance_uuid is None and host_name is None:
             msg = _("Invalid request to attach volume to an invalid target")
             raise webob.exc.HTTPBadRequest(explanation=msg)
@@ -248,11 +220,6 @@ class VolumesController(wsgi.Controller):
         """Update volume status to 'detaching'."""
         LOG.info(_LI("Update volume status to detaching, volume_id: %s"),
                  id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         self.service_api.begin_detaching(context, volume)
@@ -263,11 +230,6 @@ class VolumesController(wsgi.Controller):
         """Roll back volume status to 'in-use'."""
         LOG.info(_LI("Roll back volume status to in-use, volume_id: %s"),
                  id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         self.service_api.roll_detaching(context, volume)
@@ -278,11 +240,6 @@ class VolumesController(wsgi.Controller):
         """Clear attachment metadata."""
         LOG.info(_LI("Clear SG-volume attachment with volume_id: %s"),
                  id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         params = body['detach']
@@ -305,10 +262,6 @@ class VolumesController(wsgi.Controller):
         if snapshot_id is not None:
             name = volume.get('name', 'volume-%s' % snapshot_id)
             description = volume.get('description', name)
-            if not uuidutils.is_uuid_like(snapshot_id):
-                msg = _("Invalid snapshot id provided.")
-                LOG.error(msg)
-                raise exception.InvalidUUID(snapshot_id)
             snapshot = self.service_api.get_snapshot(context, snapshot_id)
             self.service_api.create_volume(context, snapshot=snapshot,
                                            volume_type=volume_type,
@@ -322,10 +275,6 @@ class VolumesController(wsgi.Controller):
         if checkpoint_id is not None:
             name = volume.get('name', 'volume-%s' % checkpoint_id)
             description = volume.get('description', name)
-            if not uuidutils.is_uuid_like(checkpoint_id):
-                msg = _("Invalid checkpoint id provided.")
-                LOG.error(msg)
-                raise exception.InvalidUUID(checkpoint_id)
             checkpoint = self.service_api.get_checkpoint(context,
                                                          checkpoint_id)
             self.service_api.create_volume(context, checkpoint=checkpoint,

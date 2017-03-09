@@ -23,10 +23,18 @@ from sgservice.api.openstack import wsgi
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
+from sgservice.objects import fields
 from sgservice import utils
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+
+query_checkpoint_filters_opts = cfg.ListOpt(
+    'query_checkpoint_filters',
+    default=['name', 'status', 'replication_id'],
+    help='Checkpoint filter options which non-admin user could use to query '
+         'checkpoints.')
+CONF.register_opt(query_checkpoint_filters_opts)
 
 
 class CheckpointViewBuilder(common.ViewBuilder):
@@ -41,7 +49,7 @@ class CheckpointViewBuilder(common.ViewBuilder):
     def detail(self, request, checkpoint):
         """Detailed view of a single checkpoint."""
         checkpoint_ref = {
-            'replication': {
+            'checkpoint': {
                 'id': checkpoint.get('id'),
                 'status': checkpoint.get('status'),
                 'name': checkpoint.get('display_name'),
@@ -103,14 +111,12 @@ class CheckpointsController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(CheckpointsController, self).__init__()
 
+    def _get_checkpoint_filter_options(self):
+        return CONF.query_checkpoint_filters
+
     def show(self, req, id):
         """Return data about the given checkpoints."""
         LOG.info(_LI("Show checkpoint with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid checkpoint id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         checkpoint = self.service_api.get_checkpoint(context, id)
         return self._view_builder.detail(req, checkpoint)
@@ -118,14 +124,9 @@ class CheckpointsController(wsgi.Controller):
     def delete(self, req, id):
         """Delete a checkpoint."""
         LOG.info(_LI("Delete checkpoint with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid checkpoint id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
-        checkpoint = self.service_api.get_rcheckpoint(context, id)
-        self.service_api.delete_replication(context, checkpoint)
+        checkpoint = self.service_api.get_checkpoint(context, id)
+        self.service_api.delete_checkpoint(context, checkpoint)
         return webob.Response(status_int=202)
 
     def index(self, req):
@@ -138,7 +139,7 @@ class CheckpointsController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_checkpoint_filter_options())
         utils.check_filters(filters)
 
         checkpoints = self.service_api.get_all_checkpoints(
@@ -162,13 +163,12 @@ class CheckpointsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = checkpoint.get('name', 'checkpoint-%s' % replication_id)
-        description = checkpoint.get('description', name)
-
-        if not uuidutils.is_uuid_like(replication_id):
-            msg = _("Invalid replication id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(replication_id)
+        name = checkpoint.get('name')
+        if name is None:
+            name = 'checkpoint-%s' % replication_id
+        description = checkpoint.get('description')
+        if description is None:
+            description = name
 
         replication = self.service_api.get_replication(context,
                                                        replication_id)
@@ -177,14 +177,9 @@ class CheckpointsController(wsgi.Controller):
                                                         replication)
         return self._view_builder.detail(req, checkpoint)
 
-    def rollback(self, req, id, body):
+    def rollback(self, req, id):
         """Rollback a checkpoint"""
         LOG.info(_LI("Rollback checkpoint with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid checkpoint id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         checkpoint = self.service_api.get_checkpoint(context, id)
         rollback = self.service_api.rollback_checkpoint(context, checkpoint)
@@ -193,16 +188,26 @@ class CheckpointsController(wsgi.Controller):
     def update(self, req, id, body):
         """Update a checkpoint."""
         LOG.info(_LI("Update checkpoint with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid checkpoint id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         checkpoint = self.service_api.get_checkpoint(context, id)
 
         # TODO(luobin): implement update checkpoint [name, description]
         return self._view_builder.detail(req, checkpoint)
+
+    def reset_status(self, req, id, body):
+        """reset checkpoint status"""
+        LOG.info(_LI("Reset checkpoint status, id: %s"), id)
+        status = body.get('status', None)
+        if status not in fields.CheckpointStatus.ALL:
+            msg = _("Invalid status provided.")
+            LOG.error(msg)
+            raise exception.InvalidStatus(status=status)
+
+        context = req.environ['sgservice.context']
+        checkpoint = self.service_api.get_checkpoint(context, id)
+        checkpoint.status = status
+        checkpoint.save()
+        return webob.Response(status_int=202)
 
 
 def create_resource():

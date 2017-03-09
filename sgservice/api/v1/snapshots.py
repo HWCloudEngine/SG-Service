@@ -27,6 +27,13 @@ from sgservice import utils
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
+query_snapshot_filters_opts = cfg.ListOpt(
+    'query_snapshot_filters',
+    default=['name', 'status', 'volume_id'],
+    help='Snapshot filter options which non-admin user could use to query '
+         'snapshots.')
+CONF.register_opt(query_snapshot_filters_opts)
+
 
 class SnapshotViewBuilder(common.ViewBuilder):
     """Model a server API response as a python dictionary."""
@@ -56,7 +63,8 @@ class SnapshotViewBuilder(common.ViewBuilder):
                 'name': snapshot.display_name,
                 'description': snapshot.display_description,
                 'volume_id': snapshot.volume_id,
-                'status': snapshot.status
+                'status': snapshot.status,
+                'checkpoint_id': snapshot.checkpoint_id
             }
         }
         return snapshot_ref
@@ -102,14 +110,12 @@ class SnapshotsController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(SnapshotsController, self).__init__()
 
+    def _get_snapshot_filter_options(self):
+        return CONF.query_snapshot_filters
+
     def show(self, req, id):
         """Return data about the given snapshots."""
         LOG.info(_LI("Show snapshot with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid snapshot id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         snapshot = self.service_api.get_snapshot(context, id)
         return self._view_builder.detail(req, snapshot)
@@ -117,11 +123,6 @@ class SnapshotsController(wsgi.Controller):
     def delete(self, req, id):
         """Delete a snapshot."""
         LOG.info(_LI("Delete snapshot with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid snapshot id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         snapshot = self.service_api.get_snapshot(context, id)
         self.service_api.delete_snapshot(context, snapshot)
@@ -137,7 +138,7 @@ class SnapshotsController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_snapshot_filter_options())
         utils.check_filters(filters)
 
         snapshots = self.service_api.get_all_snapshots(
@@ -159,33 +160,22 @@ class SnapshotsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = snapshot.get('name', 'snapshot-%s' % volume_id)
-        description = snapshot.get('description', name)
+        name = snapshot.get('name')
+        if name is None:
+            name = 'snapshot-%s' % volume_id
+        description = snapshot.get('description')
+        if description is None:
+            description = name
         checkpoint_id = snapshot.get('checkpoint_id', None)
-
-        if not uuidutils.is_uuid_like(volume_id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(volume_id)
-
-        if checkpoint_id and not uuidutils.is_uuid_like(checkpoint_id):
-            msg = _("Invalid checkpoint id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(checkpoint_id)
 
         volume = self.service_api.get(context, volume_id)
         snapshot = self.service_api.create_snapshot(
             context, name, description, volume, checkpoint_id)
         return self._view_builder.detail(req, snapshot)
 
-    def rollback(self, req, id, body):
+    def rollback(self, req, id):
         """Rollback a snapshot to volume"""
         LOG.info(_LI("Rollback snapshot with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid snapshot id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         snapshot = self.service_api.get_snapshot(context, id)
         rollback = self.service_api.rollback_snapshot(context, snapshot)
@@ -194,11 +184,6 @@ class SnapshotsController(wsgi.Controller):
     def update(self, req, id, body):
         """Update a snapshot."""
         LOG.info(_LI("Update snapshot with id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid snapshot id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         snapshot = self.service_api.get_snapshot(context, id)
 

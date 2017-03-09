@@ -92,7 +92,7 @@ class ISCSISGDriver(SGDriver):
 
     def initialize_connection(self, context, volume, connector=None):
         driver_data = jsonutils.loads(volume['driver_data'])
-        driver_type = driver_data['driver_data']
+        driver_type = driver_data['driver_type']
         connection_info = {}
         if driver_type == 'iscsi':
             # iscsi mode
@@ -159,6 +159,13 @@ class ISCSISGDriver(SGDriver):
         response = self.sg_ctrl.snapshots.delete_snapshot(snapshot)
         if response['status'] != 0:
             msg = _("Call delete_snapshot to sg client failed")
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def rollback_snapshot(self, snapshot):
+        response = self.sg_ctrl.snapshots.rollback_snapshot(snapshot)
+        if response['status'] != 0:
+            msg = _("Call rollback_snapshot to sg client failed")
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 

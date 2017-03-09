@@ -325,7 +325,7 @@ class WSGIService(service.ServiceBase):
                      "must be greater than 0.") %
                    {'worker_name': worker_name,
                     'workers': self.workers})
-            raise exception.InvalidInput(msg)
+            raise exception.InvalidInput(reason=msg)
 
         self.server = wsgi.Server(name,
                                   self.app,

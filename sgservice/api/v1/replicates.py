@@ -41,11 +41,6 @@ class ReplicatesController(wsgi.Controller):
     def delete_replicate(self, req, id, body):
         """Delete a volume's replicate."""
         LOG.info(_LI("Delete volume's replicate, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         self.service_api.delete_replicate(context, volume)
@@ -55,11 +50,6 @@ class ReplicatesController(wsgi.Controller):
     def create_replicate(self, req, id, body):
         """Creates SG-enabled volume's replicate."""
         LOG.debug("Create volume's replicate, volume_id: %s", id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         params = body.get('create_replicate', {})
         mode = params.get('mode', constants.REP_MASTER)
@@ -72,19 +62,11 @@ class ReplicatesController(wsgi.Controller):
         if replication_id is None:
             msg = _("Replication id can't be None")
             raise webob.exc.HTTPBadRequest(explanation=msg)
-        if not uuidutils.is_uuid_like(replication_id):
-            msg = _("Invalid replication id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(replication_id)
 
         peer_volume = params.get('peer_volume', None)
         if peer_volume is None:
             msg = _("Peer volume can't be None")
             raise webob.exc.HTTPBadRequest(explanation=msg)
-        if not uuidutils.is_uuid_like(peer_volume):
-            msg = _("Invalid peer volume provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(peer_volume)
 
         volume = self.service_api.get(context, id)
         volume = self.service_api.create_replicate(context, volume, mode,
@@ -95,11 +77,6 @@ class ReplicatesController(wsgi.Controller):
     def enable_replicate(self, req, id, body):
         """Re-enable a volume's replicate"""
         LOG.info(_LI("Enable volume's replicate, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         volume = self.service_api.enable_replicate(context, volume)
@@ -109,11 +86,6 @@ class ReplicatesController(wsgi.Controller):
     def disable_replicate(self, req, id, body):
         """Disable a volume's replicate"""
         LOG.info(_LI("Disable volume's replicate, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         volume = self.service_api.disable_replicate(context, volume)
@@ -123,11 +95,6 @@ class ReplicatesController(wsgi.Controller):
     def failover_replicate(self, req, id, body):
         """Failover a volume's replicate"""
         LOG.info(_LI("Failover volume's replicate, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         volume = self.service_api.failover_replicate(context, volume)
@@ -137,11 +104,6 @@ class ReplicatesController(wsgi.Controller):
     def reverse_replicate(self, req, id, body):
         """Reverse a volume's replicate"""
         LOG.info(_LI("Reverse volume's replicate, volume_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
         volume = self.service_api.reverse_replicate(context, volume)

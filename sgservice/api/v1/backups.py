@@ -28,6 +28,13 @@ from sgservice import utils
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
+query_backup_filters_opts = cfg.ListOpt(
+    'query_backup_filters',
+    default=['name', 'status', 'volume_id'],
+    help='Backup filter options which non-admin user could use to query '
+         'backups.')
+CONF.register_opt(query_backup_filters_opts)
+
 
 class BackupViewBuilder(common.ViewBuilder):
     """Model a server API response as a python dictionary."""
@@ -103,14 +110,12 @@ class BackupsController(wsgi.Controller):
         self.service_api = ServiceAPI()
         super(BackupsController, self).__init__()
 
+    def _get_backup_filter_options(self):
+        return CONF.query_backup_filters
+
     def show(self, req, id):
         """Return data about the given backups."""
         LOG.info(_LI("Show backup, backup_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid backup id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         backup = self.service_api.get_backup(context, id)
         return self._view_builder.detail(req, backup)
@@ -118,11 +123,6 @@ class BackupsController(wsgi.Controller):
     def delete(self, req, id):
         """Delete a backup."""
         LOG.info(_LI("Delete backup, backup_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid backup id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         backup = self.service_api.get_backup(context, id)
         self.service_api.delete_backup(context, backup)
@@ -138,7 +138,7 @@ class BackupsController(wsgi.Controller):
         filters = params
 
         utils.remove_invaild_filter_options(
-            context, filters, self._get_replication_filter_options())
+            context, filters, self._get_backup_filter_options())
         utils.check_filters(filters)
 
         backups = self.service_api.get_all_backups(
@@ -160,23 +160,26 @@ class BackupsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = backup.get('name', 'backup-%s' % volume_id)
-        description = backup.get('description', name)
+        name = backup.get('name')
+        if name is None:
+            name = 'backup-%s' % volume_id
+        description = backup.get('description')
+        if description is None:
+            description = name
 
-        backup_type = backup.get('type', constants.FULL_BACKUP)
+        backup_type = backup.get('type')
+        if backup_type is None:
+            backup_type = constants.FULL_BACKUP
         if backup_type not in constants.SUPPORT_BACKUP_TYPES:
             msg = _('backup type should be full or incremental')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        backup_destination = backup.get('destination', constants.LOCAL_BACKUP)
+        backup_destination = backup.get('destination')
+        if backup_destination is None:
+            backup_destination = constants.LOCAL_BACKUP
         if backup_destination not in constants.SUPPORT_BACKUP_DESTINATIONS:
             msg = _('backup destination should be local or remote')
             raise webob.exc.HTTPBadRequest(explanation=msg)
-
-        if not uuidutils.is_uuid_like(volume_id):
-            msg = _("Invalid volume id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(volume_id)
 
         volume = self.service_api.get(context, volume_id)
         backup = self.service_api.create_backup(context, name, description,
@@ -187,11 +190,6 @@ class BackupsController(wsgi.Controller):
     def update(self, req, id, body):
         """Update a backup."""
         LOG.info(_LI("Update backup, backup_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid backup id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         backup = self.service_api.get_backup(context, id)
 
@@ -201,11 +199,6 @@ class BackupsController(wsgi.Controller):
     def restore(self, req, id, body):
         """Restore backup to an SG-enabled volume"""
         LOG.info(_LI("Restore backup to sg-enabled volume, backup_id: %s"), id)
-        if not uuidutils.is_uuid_like(id):
-            msg = _("Invalid backup id provided.")
-            LOG.error(msg)
-            raise exception.InvalidUUID(id)
-
         context = req.environ['sgservice.context']
         backup = self.service_api.get_backup(context, id)
         restore = body['restore']

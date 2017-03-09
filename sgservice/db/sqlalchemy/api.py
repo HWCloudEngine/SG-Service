@@ -1140,6 +1140,7 @@ def volume_detached(context, volume_id, attachment_id):
 
         volume_ref = _volume_get(context, volume_id, session=session)
         if not remain_attachment:
+            volume_ref['status'] = 'enabled'
             volume_ref['attach_status'] = 'detached'
             volume_ref.save(session=session)
         else:
