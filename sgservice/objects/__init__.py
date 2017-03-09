@@ -21,3 +21,4 @@ def register_all():
     __import__('sgservice.objects.snapshot')
     __import__('sgservice.objects.volume')
     __import__('sgservice.objects.volume_attachment')
+    __import__('sgservice.objects.checkpoint')
