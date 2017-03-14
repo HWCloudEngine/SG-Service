@@ -82,6 +82,15 @@ class ControllerAPI(object):
         return cctxt.cast(ctxt, 'restore_backup', backup_id=backup.id,
                           volume_id=volume.id)
 
+    def export_record(self, ctxt, backup):
+        cctxt = self.client.prepare(server=backup['host'], version='1.0')
+        return cctxt.call(ctxt, 'export_record', backup_id=backup.id)
+
+    def import_record(self, ctxt, backup, backup_record):
+        cctxt = self.client.prepare(server=backup['host'], version='1.0')
+        return cctxt.call(ctxt, 'import_record', backup_id=backup.id,
+                          backup_record=backup_record)
+
     def create_snapshot(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
         return cctxt.cast(ctxt, 'create_snapshot', snapshot_id=snapshot.id,

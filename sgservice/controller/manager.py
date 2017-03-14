@@ -103,6 +103,7 @@ class ControllerManager(manager.Manager):
         self.sync_status_interval = CONF.sync_status_interval
         driver_class = CONF.sg_driver
         self.driver = importutils.import_object(driver_class)
+        self.admin_context = sg_context.get_admin_context()
 
         self.sync_attach_volumes = {}  # used to sync enable-volumes from cinder
         sync_attach_volume_loop = loopingcall.FixedIntervalLoopingCall(
@@ -202,6 +203,13 @@ class ControllerManager(manager.Manager):
             else:
                 if driver_backup['status'] == fields.BackupStatus.DELETED:
                     backup.destroy()
+                    if backup.parent_id:
+                        parent_backup = objects.Backup.get_by_id(
+                            self.admin_context,
+                            backup.parent_id)
+                        if parent_backup.has_dependent_backups:
+                            parent_backup.num_dependent_backups -= 1
+                            parent_backup.save()
                     self.sync_backups.pop(backup_id)
                     continue
                 backup.update({'status': driver_backup['status']})
@@ -213,6 +221,15 @@ class ControllerManager(manager.Manager):
                 if action == 'create':
                     if backup.status == fields.BackupStatus.AVAILABLE:
                         volume.update({'status': volume.previous_status})
+                        if backup['parent_id']:
+                            parent_backup = objects.Backup.get_by_id(
+                                self.admin_context,
+                                backup.parent_id)
+                            parent_backup.num_dependent_backups += 1
+                            parent_backup.save()
+                            LOG.info(
+                                _LI('Create backup finished. backup: %s.'),
+                                backup_id)
                     else:
                         volume.update({'status': fields.VolumeStatus.ERROR})
                     volume.save()
@@ -259,7 +276,7 @@ class ControllerManager(manager.Manager):
                 continue
 
             if driver_volume[
-                    'replicate_status'] in REPLICATE_STATUS_ACTION.keys():
+                'replicate_status'] in REPLICATE_STATUS_ACTION.keys():
                 continue
             else:
                 volume.update(
@@ -274,7 +291,7 @@ class ControllerManager(manager.Manager):
                 action = volume_info['action']
                 if (driver_volume['replicate_status'] ==
                         fields.ReplicateStatus.DISABLED
-                        and action == 'reverse_replicate'):
+                    and action == 'reverse_replicate'):
                     if volume['replicate_mode'] == constants.REP_MASTER:
                         volume.update({'replicate_mode': constants.REP_SLAVE,
                                        'access_mode': constants.ACCESS_RO})
@@ -612,6 +629,10 @@ class ControllerManager(manager.Manager):
 
         try:
             self.driver.create_backup(backup=backup)
+            driver_data = {'volume_id': volume_id,
+                           'backup_id': backup_id}
+            backup.update({'driver_data': jsonutils.dumps(driver_data)})
+            backup.save()
         except exception.SGDriverError:
             with excutils.save_and_reraise_exception():
                 self._update_backup_error(backup)
@@ -712,6 +733,28 @@ class ControllerManager(manager.Manager):
                 'context': context
             }
         }
+
+    def export_record(self, context, backup_id):
+        LOG.info(_LI("Export backup record started, backup:%s"), backup_id)
+        backup = objects.Backup.get_by_id(context, backup_id)
+        backup_record = {
+            "backup_type": backup['type'],
+            "driver_data": jsonutils.loads(backup['driver_data'])
+        }
+        return backup_record
+
+    def import_record(self, context, backup_id, backup_record):
+        LOG.info(_LI('Import record started, backup_record: %s.'),
+                 backup_record)
+        backup = objects.Backup.get_by_id(context, backup_id)
+        backup_type = backup_record.get('backup_record', constants.FULL_BACKUP)
+        driver_data = jsonutils.dumps(backup_record.get('driver_data'))
+
+        backup.update({'type': backup_type,
+                       'replication_zone': CONF.replication_zone,
+                       'driver_data': driver_data,
+                       'status': fields.BackupStatus.AVAILABLE})
+        backup.save()
 
     def _update_snapshot_error(self, snapshot):
         snapshot.update({'status': fields.SnapshotStatus.ERROR})

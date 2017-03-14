@@ -43,7 +43,11 @@ class Backup(base.SGServicePersistentObject, base.SGServiceObject,
         'destination': fields.StringField(nullable=True),
         'availability_zone': fields.StringField(nullable=True),
         'replication_zone': fields.StringField(nullable=True),
-        'volume_id': fields.UUIDField(nullable=True)
+        'volume_id': fields.UUIDField(nullable=True),
+        'driver_data':  fields.StringField(nullable=True),
+        'parent_id': fields.StringField(nullable=True),
+        'num_dependent_backups': fields.IntegerField(default=0),
+        'data_timestamp': fields.DateTimeField(nullable=True)
     }
 
     # obj_extra_fields is used to hold properties that are not
@@ -53,6 +57,10 @@ class Backup(base.SGServicePersistentObject, base.SGServiceObject,
     @property
     def name(self):
         return CONF.backup_name_template % self.id
+
+    @property
+    def has_dependent_backups(self):
+        return bool(self.num_dependent_backups)
 
     @classmethod
     def _from_db_object(cls, context, backup, db_backup, expected_attrs=None):

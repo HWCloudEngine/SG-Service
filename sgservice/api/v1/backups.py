@@ -69,6 +69,15 @@ class BackupViewBuilder(common.ViewBuilder):
             }
         }
 
+    def export_summary(self, request, export):
+        """Generic view of an export."""
+        return {
+            'backup-record': {
+                'driver_data': export['dirver_data'],
+                'backup_type': export['backup_type']
+            },
+        }
+
     def detail_list(self, request, backups, backup_count=None):
         """Detailed view of a list of backups."""
         return self._list_view(self.detail, request, backups,
@@ -209,6 +218,40 @@ class BackupsController(wsgi.Controller):
 
         restore = self.service_api.restore_backup(context, backup, volume_id)
         return self._view_builder.restore_summary(req, restore)
+
+    def export_record(self, req, id):
+        """Export backup record"""
+        LOG.info(_LI("Export backup record, backup_id: %s"), id)
+        context = req.environ['sgservice.context']
+        backup = self.service_api.get_backup(context, id)
+
+        record = self.service_api.export_record(context, backup)
+        return self._view_builder.export_summary(req, record)
+
+    def import_record(self, req, body):
+        """Import a backup"""
+        LOG.info(_LI("Importing record from body: %s"), body)
+        self.assert_valid_body(body, 'backup-record')
+        context = req.environ['cinder.context']
+        import_data = body['backup-record']
+        # Verify that body elements are provided
+        try:
+            driver_data = import_data['driver_data']
+        except KeyError:
+            msg = _("Incorrect request body format.")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        LOG.debug('Importing backup using driver_data %s.', driver_data)
+
+        try:
+            new_backup = self.service_api.import_record(context, driver_data)
+        except exception.InvalidBackup as error:
+            raise webob.exc.HTTPBadRequest(explanation=error.msg)
+        # Other Not found exceptions will be handled at the wsgi level
+        except exception.ServiceNotFound as error:
+            raise webob.exc.HTTPInternalServerError(explanation=error.msg)
+
+        retval = self._view_builder.detail(req, new_backup)
+        return retval
 
 
 def create_resource():

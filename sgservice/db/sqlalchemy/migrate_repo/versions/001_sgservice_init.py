@@ -145,6 +145,10 @@ def define_tables(meta):
         Column('availability_zone', String(255)),
         Column('replication_zone', String(255)),
         Column('volume_id', String(36), nullable=False),
+        Column('driver_data', Text, nullable=True),
+        Column('parent_id', String(36), nullable=True),
+        Column('num_dependent_backups', Integer, default=0),
+        Column('data_timestamp', DateTime),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )

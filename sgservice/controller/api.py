@@ -345,6 +345,25 @@ class API(base.Base):
                      'but current status is "%s".') % volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
+        latest_backup = None
+        if backup_type == constants.INCREMENTAL_BACKUP:
+            backups = objects.BackupList.get_all_by_volume(context,
+                                                           volume['id'])
+            if backups.objects:
+                latest_backup = max(backups.objects,
+                                    key=lambda x: x['data_timestamp'])
+            else:
+                msg = _('No backups available to do an incremental backup.')
+                raise exception.InvalidBackup(reason=msg)
+
+        parent_id = None
+        if latest_backup:
+            parent_id = latest_backup['id']
+            if latest_backup['status'] != fields.BackupStatus.AVAILABLE:
+                msg = _('The parent backup must be available for incremental '
+                        'backup.')
+                raise exception.InvalidBackup(reason=msg)
+
         previous_status = volume['status']
         volume.update({'status': fields.VolumeStatus.BACKING_UP,
                        'previous_status': previous_status})
@@ -364,10 +383,12 @@ class API(base.Base):
                 'type': backup_type,
                 'destination': backup_destination,
                 'availability_zone': volume['availability_zone'],
-                'replication_zone': volume['replication_zone']
+                'replication_zone': volume['replication_zone'],
+                'parent_id': parent_id
             }
             backup = objects.Backup(context, **kwargs)
             backup.create()
+            backup['data_timestamp'] = backup['created_at']
             backup.save()
         except Exception:
             with excutils.save_and_reraise_exception():
@@ -380,6 +401,12 @@ class API(base.Base):
         return backup
 
     def delete_backup(self, context, backup):
+        deltas = self.get_all_backups(context,
+                                      filters={'parent_id': backup.id})
+        if deltas and len(deltas):
+            msg = _('Incremental backups exist for this backup.')
+            raise exception.InvalidBackup(reason=msg)
+
         backup.update({'status': fields.BackupStatus.DELETING})
         backup.save()
         self.controller_rpcapi.delete_backup(context, backup)
@@ -458,6 +485,28 @@ class API(base.Base):
 
         LOG.info(_LI("Get all backups completed successfully."))
         return backups
+
+    def export_record(self, context, backup):
+        if backup['status'] != fields.BackupStatus.AVAILABLE:
+            msg = (_('Backup status must be available and not %s.') %
+                   backup['status'])
+            raise exception.InvalidBackup(reason=msg)
+
+        export_data = self.controller_rpcapi.export_record(context, backup)
+        return export_data
+
+    def import_record(self, context, backup_record):
+        kwargs = {
+            'user_id': context.user_id,
+            'project_id': context.project_id,
+            'availability_zone': CONF.availability_zone,
+            'status': fields.BackupStatus.CREATING,
+            'destination': constants.LOCAL_BACKUP,
+        }
+        backup = objects.Backup(context, **kwargs)
+        backup.create()
+        self.controller_rpcapi.import_record(context, backup, backup_record)
+        return backup
 
     def get_snapshot(self, context, snapshot_id):
         try:

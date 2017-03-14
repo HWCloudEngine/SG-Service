@@ -53,7 +53,9 @@ class APIRouter(wsgi_common.Router):
         mapper.resource("backup", "backups",
                         controller=backups_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST', 'restore': 'POST'})
+                        member={'action': 'POST', 'restore': 'POST',
+                                'import_record': 'POST',
+                                'export_record': 'POST'})
 
         checkpoints_resources = checkpoints.create_resource()
         mapper.resource("checkpoint", "checkpoints",

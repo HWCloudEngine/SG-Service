@@ -192,6 +192,10 @@ class Backup(BASE, SGServiceBase):
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
     volume_id = Column(String(36), nullable=False)
+    driver_data = Column(Text, nullable=True)
+    parent_id = Column(String(36), nullable=True)
+    num_dependent_backups = Column(Integer)
+    data_timestamp = Column(DateTime)
 
     @property
     def name(self):
