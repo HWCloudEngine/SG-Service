@@ -189,9 +189,36 @@ class CheckpointsController(wsgi.Controller):
         """Update a checkpoint."""
         LOG.info(_LI("Update checkpoint with id: %s"), id)
         context = req.environ['sgservice.context']
-        checkpoint = self.service_api.get_checkpoint(context, id)
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'checkpoint' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'checkpoint')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        # TODO(luobin): implement update checkpoint [name, description]
+        checkpoint = body['checkpoint']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in checkpoint:
+                update_dict[key] = checkpoint[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        checkpoint = self.service_api.get_checkpoint(context, id)
+        checkpoint.update(update_dict)
+        checkpoint.save()
+
         return self._view_builder.detail(req, checkpoint)
 
     def reset_status(self, req, id, body):

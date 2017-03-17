@@ -185,9 +185,36 @@ class SnapshotsController(wsgi.Controller):
         """Update a snapshot."""
         LOG.info(_LI("Update snapshot with id: %s"), id)
         context = req.environ['sgservice.context']
-        snapshot = self.service_api.get_snapshot(context, id)
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'snapshot' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'snapshot')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        # TODO(luobin): implement update snapshot [name, description]
+        snapshot = body['snapshot']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in snapshot:
+                update_dict[key] = snapshot[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        snapshot = self.service_api.get_snapshot(context, id)
+        snapshot.update(update_dict)
+        snapshot.save()
+
         return self._view_builder.detail(req, snapshot)
 
 

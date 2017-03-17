@@ -175,9 +175,36 @@ class ReplicationsController(wsgi.Controller):
         """Update a replication."""
         LOG.info(_LI("Update replication with id: %s"), id)
         context = req.environ['sgservice.context']
-        replication = self.service_api.get_replication(context, id)
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'replication' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'replication')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        # TODO(luobin): implement update replication [name, description]
+        replication = body['replication']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in replication:
+                update_dict[key] = replication[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        replication = self.service_api.get_replication(context, id)
+        replication.update(update_dict)
+        replication.save()
+
         return self._view_builder.detail(req, replication)
 
     @wsgi.action('enable')

@@ -200,9 +200,35 @@ class BackupsController(wsgi.Controller):
         """Update a backup."""
         LOG.info(_LI("Update backup, backup_id: %s"), id)
         context = req.environ['sgservice.context']
-        backup = self.service_api.get_backup(context, id)
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'backup' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'backup')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        # TODO(luobin): implement update backup [status, name, description]
+        backup = body['backup']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in backup:
+                update_dict[key] = backup[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        backup = self.service_api.get_backup(context, id)
+        backup.update(update_dict)
+        backup.save()
         return self._view_builder.detail(req, backup)
 
     def restore(self, req, id, body):
