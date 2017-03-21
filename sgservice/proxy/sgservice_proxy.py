@@ -18,6 +18,7 @@ import oslo_messaging as messaging
 from oslo_utils import excutils
 from oslo_utils import uuidutils
 from oslo_service import loopingcall
+from oslo_serialization import jsonutils
 from cinderclient.v2 import client as cinder_client
 from keystoneclient.v2_0 import client as kc
 from cinderclient import exceptions as cinder_exception
@@ -25,6 +26,7 @@ from keystoneclient import exceptions as keystone_exception
 
 from sgsclient.exceptions import NotFound
 from sgservice.i18n import _, _LI, _LE
+from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice import objects
@@ -687,6 +689,46 @@ class SGServiceProxy(manager.Manager):
                 self.db.volume_update(
                         context, volume_id,
                         {'status': fields.VolumeStatus.ERROR_RESTORING})
+
+    def export_record(self, backup_id):
+        LOG.info(_LI("Export backup record started, backup:%s"), backup_id)
+        try:
+            csd_backup_id = self._get_csd_backup_id(backup_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            backup_record = csd_sgs_client.backups.export_record(
+                backup_id=csd_backup_id)
+            return backup_record
+        except Exception as err:
+            msg = (_("Export backup record failed, err: %s"), err)
+            LOG.error(msg)
+            raise exception.InvalidBackup(reason=msg)
+
+    def import_record(self, backup_id, backup_record):
+        LOG.info(_LI('Import record started, backup_record: %s.'),
+                 backup_record)
+        backup = objects.Backup.get_by_id(context, backup_id)
+        backup_type = backup_record.get('backup_record', constants.FULL_BACKUP)
+        driver_data = jsonutils.dumps(backup_record.get('driver_data'))
+
+        backup.update({'type': backup_type,
+                       'replication_zone': CONF.replication_zone,
+                       'driver_data': driver_data})
+        backup.save()
+        try:
+            csd_backup_id = self._get_csd_backup_id(backup_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            csd_backup = csd_sgs_client.backups.import_record(
+                backup_record=backup_record)
+            csd_sgs_client.backups.update(backup_id=csd_backup.id,
+                                          name=csd_backup_id)
+            backup.update({'status': fields.BackupStatus.AVAILABLE})
+            backup.save()
+        except Exception as err:
+            msg = (_("Import backup record failed, err: %s"), err)
+            LOG.error(msg)
+            backup.update({'status': fields.BackupStatus.ERROR})
+            backup.save()
+            raise exception.InvalidBackup(reason=msg)
 
     def _update_snapshot_error(self, snapshot):
         snapshot.update({'status': fields.SnapshotStatus.ERROR})

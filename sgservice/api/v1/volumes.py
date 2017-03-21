@@ -288,6 +288,42 @@ class VolumesController(wsgi.Controller):
                 'a snapshot or checkpoint')
         raise webob.exc.HTTPBadRequest(explanation=msg)
 
+    def update(self, req, id, body):
+        """Update a volume."""
+        LOG.info(_LI("Update snapshot with id: %s"), id)
+        context = req.environ['sgservice.context']
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'volume' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'volume')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+
+        volume = body['volume']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in volume:
+                update_dict[key] = volume[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        volume = self.service_api.get(context, id)
+        volume.update(update_dict)
+        volume.save()
+
+        return self._view_builder.detail(req, volume)
+
 
 def create_resource():
     return wsgi.Resource(VolumesController())
