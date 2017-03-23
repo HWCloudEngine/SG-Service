@@ -25,13 +25,34 @@ from sgservice.objects import fields as s_fields
 CONF = cfg.CONF
 
 
+class MetadataObject(dict):
+    # This is a wrapper class that simulates SQLAlchemy (.*)Metadata objects to
+    # maintain compatibility with older representations of Volume that some
+    # drivers rely on. This is helpful in transition period while some driver
+    # methods are invoked with volume versioned object and some SQLAlchemy
+    # object or dict.
+    def __init__(self, key=None, value=None):
+        super(MetadataObject, self).__init__()
+        self.key = key
+        self.value = value
+
+    def __getattr__(self, name):
+        if name in self:
+            return self[name]
+        else:
+            raise AttributeError("No such attribute: " + name)
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
 @base.SGServiceObjectRegistry.register
 class Volume(base.SGServicePersistentObject, base.SGServiceObject,
              base.SGServiceObjectDictCompat, base.SGServiceComparableObject):
     # Version 1.0: Initial version
     VERSION = '1.0'
 
-    OPTIONAL_FIELDS = ['volume_attachment']
+    OPTIONAL_FIELDS = ['volume_attachment', 'metadata']
 
     fields = {
         'id': fields.UUIDField(),
@@ -52,17 +73,59 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'access_mode': fields.StringField(nullable=True),
         'driver_data': fields.StringField(nullable=True),
 
+        'metadata': fields.DictOfStringsField(nullable=True),
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
                                                 nullable=True),
     }
 
     # NOTE(thangp): obj_extra_fields is used to hold properties that are not
     # usually part of the model
-    obj_extra_fields = ['name']
+    obj_extra_fields = ['name', 'volume_metadata']
+
+    @classmethod
+    def _get_expected_attrs(cls, context, *args, **kwargs):
+        expected_attrs = ['metadata']
+
+        return expected_attrs
 
     @property
     def name(self):
         return CONF.volume_name_template % self.name_id
+
+    @property
+    def volume_metadata(self):
+        md = [MetadataObject(k, v) for k, v in self.metadata.items()]
+        return md
+
+    @volume_metadata.setter
+    def volume_metadata(self, value):
+        md = {d['key']: d['value'] for d in value}
+        self.metadata = md
+
+    def __init__(self, *args, **kwargs):
+        super(Volume, self).__init__(*args, **kwargs)
+        self._orig_metadata = {}
+
+    def obj_reset_changes(self, fields=None):
+        super(Volume, self).obj_reset_changes(fields)
+        self._reset_metadata_tracking(fields=fields)
+
+    @classmethod
+    def _obj_from_primitive(cls, context, objver, primitive):
+        obj = super(Volume, Volume)._obj_from_primitive(context, objver,
+                                                        primitive)
+        obj._reset_metadata_tracking()
+        return obj
+
+    def _reset_metadata_tracking(self, fields=None):
+        if fields is None or 'metadata' in fields:
+            self._orig_metadata = (dict(self.metadata)
+                                   if 'metadata' in self else {})
+
+    def obj_what_changed(self):
+        changes = super(Volume, self).obj_what_changed()
+        if 'metadata' in self and self.metadata != self._orig_metadata:
+            changes.add('metadata')
 
     @classmethod
     def _from_db_object(cls, context, volume, db_volume, expected_attrs=None):
@@ -76,6 +139,9 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
                 value = value or 0
             volume[name] = value
 
+        if 'metadata' in expected_attrs:
+            metadata = db_volume.get('volume_metadata', [])
+            volume.metadata = {item['key']: item['value'] for item in metadata}
         if 'volume_attachment' in expected_attrs:
             if db_volume.get('volume_attachment', None) is None:
                 db_volume.volume_attachment = None
@@ -104,15 +170,22 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
     def save(self):
         updates = self.sgservice_obj_get_changes()
         if updates:
-            db.volume_update(self._context, self.id, updates)
+            if 'metadata' in updates:
+                # Metadata items that are not specified in the
+                # self.metadata will be deleted
+                metadata = updates.pop('metadata', None)
+                self.metadata = db.volume_metadata_update(self._context,
+                                                          self.id, metadata)
+            if updates:
+                db.volume_update(self._context, self.id, updates)
         self.obj_reset_changes()
 
     @base.remotable
     def destroy(self):
         with self.obj_as_admin():
             updated_values = db.volume_destroy(self._context, self.id)
-            self.update(updated_values)
-            self.obj_reset_changes(updated_values.keys())
+        self.update(updated_values)
+        self.obj_reset_changes(updated_values.keys())
 
     @base.remotable_classmethod
     def reenable(cls, context, volume_id, values):
@@ -128,11 +201,23 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
             raise exception.OrphanedObjectError(method='obj_load_attr',
                                                 objtype=self.obj_name())
 
+        if attrname == 'metadata':
+            self.metadata = db.volume_metadata_get(self._context, self.id)
         elif attrname == 'volume_attachment':
             attachments = objects.VolumeAttachmentList.get_all_by_volume_id(
                 self._context, self.id)
             self.volume_attachment = attachments
         self.obj_reset_changes(fields=[attrname])
+
+    def delete_metadata_key(self, key):
+        db.volume_metadata_delete(self._context, self.id, key)
+        md_was_changed = 'metadata' in self.obj_what_changed()
+
+        del self.metadata[key]
+        self._orig_metadata.pop(key, None)
+
+        if not md_was_changed:
+            self.obj_reset_changes(['metadata'])
 
 
 @base.SGServiceObjectRegistry.register
@@ -144,7 +229,8 @@ class VolumeList(base.ObjectListBase, base.SGServiceObject):
     }
 
     @classmethod
-    def get_all(cls, context, marker=None, limit=None, sort_keys=None, sort_dirs=None,
+    def get_all(cls, context, marker=None, limit=None, sort_keys=None,
+                sort_dirs=None,
                 filters=None, offset=None):
         volumes = db.volume_get_all(context, marker=marker, limit=limit,
                                     sort_keys=sort_keys, sort_dirs=sort_dirs,

@@ -605,3 +605,21 @@ def checkpoint_get_all_by_replication(context, replication_id, filters=None):
     """Get all checkpoints belonging to a replication."""
     return IMPL.checkpoint_get_all_by_replication(context, replication_id,
                                                   filters=filters)
+
+
+###############
+
+
+def volume_metadata_get(context, volume_id):
+    """Get all metadata for a volume."""
+    return IMPL.volume_metadata_get(context, volume_id)
+
+
+def volume_metadata_delete(context, volume_id, key):
+    """Delete the given metadata item."""
+    return IMPL.volume_metadata_delete(context, volume_id, key)
+
+
+def volume_metadata_update(context, volume_id, metadata, delete):
+    """Update metadata if it exists, otherwise create it."""
+    return IMPL.volume_metadata_update(context, volume_id, metadata, delete)

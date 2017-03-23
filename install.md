@@ -30,7 +30,7 @@
 5. Populate the sgservice database;
 * sgservice-manage db sync
 
-6. Start sgservice-api sgservice-controller;
-* sgservice-api --config-file /etc/sgservice/sgservice.conf --log-file /var/log/sgservice.log
-* sgservice-controller --config-file /etc/sgservice/sgservice.conf --log-file /var/log/sgservice.log
-
+6. Start sgservice-api sgservice-controller sgservice-proxy;
+* $ sgservice-api --config-file /etc/sgservice/sgservice-api.conf --log-file /var/log/sgservice-api.log
+* $ sgservice-controller --config-file /etc/sgservice/sgservice-controller.conf --log-file /var/log/sgservice-controller.log
+* $ sgservice-proxy --config-file /etc/sgservice/sgservice-proxy.conf --log-file /var/log/sgservice-proxy.log

@@ -28,8 +28,9 @@ from oslo_utils import importutils
 from oslo_utils import uuidutils
 
 from sgservice.common import constants
+from sgservice.common.clients import cinder
+from sgservice.common.clients import nova
 from sgservice import context as sg_context
-from sgservice.controller.client_factory import ClientFactory
 from sgservice import exception
 from sgservice.i18n import _, _LE, _LI
 from sgservice import manager
@@ -104,6 +105,8 @@ class ControllerManager(manager.Manager):
         driver_class = CONF.sg_driver
         self.driver = importutils.import_object(driver_class)
         self.admin_context = sg_context.get_admin_context()
+        self.admin_cinder_client = cinder.get_admin_client()
+        self.admin_nova_client = nova.get_admin_client()
 
         self.sync_attach_volumes = {}  # used to sync enable-volumes from cinder
         sync_attach_volume_loop = loopingcall.FixedIntervalLoopingCall(
@@ -138,10 +141,9 @@ class ControllerManager(manager.Manager):
     def init_host(self, **kwargs):
         """Handle initialization if this is a standalone service"""
         LOG.info(_LI("Starting controller service"))
-        context = sg_context.get_admin_context()
-        self._init_backups(context)
-        self._init_replicates(context)
-        self._init_snapshots(context)
+        self._init_backups(self.admin_context)
+        self._init_replicates(self.admin_context)
+        self._init_snapshots(self.admin_context)
 
     def _init_replicates(self, context):
         volumes = objects.VolumeList.get_all(context)
@@ -179,7 +181,7 @@ class ControllerManager(manager.Manager):
     def _attach_volume_to_sg(self, context, volume_id):
         """ Attach volume to sg-client and get mountpoint
         """
-        nova_client = ClientFactory.create_client('nova', context)
+        nova_client = nova.get_project_context_client(context)
         try:
             volume_attachment = nova_client.volumes.create_server_volume(
                 CONF.sg_client.sg_client_instance, volume_id)
@@ -318,7 +320,7 @@ class ControllerManager(manager.Manager):
 
     def _detach_volume_from_sg(self, context, volume_id):
         # detach volume from sg-client
-        nova_client = ClientFactory.create_client('nova', context)
+        nova_client = nova.get_project_context_client(context)
         try:
             nova_client.volumes.delete_server_volume(
                 CONF.sg_client.sg_client_instance, volume_id)
@@ -420,14 +422,19 @@ class ControllerManager(manager.Manager):
         volume.update({'replication_zone': CONF.sg_client.replication_zone})
         volume.save()
 
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume_id
         try:
-            mountpoint = self._attach_volume_to_sg(context, volume_id)
+            mountpoint = self._attach_volume_to_sg(context, logical_volume_id)
         except Exception as err:
             LOG.error(err)
             volume.update({'status': fields.VolumeStatus.ERROR})
+            volume.save()
             raise exception.EnableSGFailed(reason=err)
 
-        cinder_client = ClientFactory.create_client('cinder', context)
+        cinder_client = cinder.get_project_context_client(context)
         self.sync_attach_volumes[volume_id] = {
             'cinder_client': cinder_client,
             'action': self._enable_sg_action,
@@ -466,13 +473,17 @@ class ControllerManager(manager.Manager):
             volume.save()
             raise exception.DisableSGFailed(reason=err)
 
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume_id
         try:
-            self._detach_volume_from_sg(context, volume_id)
+            self._detach_volume_from_sg(context, logical_volume_id)
         except Exception as err:
             LOG.error(err)
             raise exception.DisableSGFailed(reason=err)
 
-        cinder_client = ClientFactory.create_client('cinder', context)
+        cinder_client = cinder.get_project_context_client(context)
         self.sync_detach_volumes[volume_id] = {
             'cinder_client': cinder_client,
             'action': self._disable_sg_action,
@@ -711,8 +722,14 @@ class ControllerManager(manager.Manager):
             self._update_backup_error(backup)
             raise exception.InvalidBackup(reason=msg)
 
+        cinder_client = cinder.get_project_context_client(context)
+        volume = cinder_client.volumes.get(volume_id)
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume_id
         try:
-            mountpoint = self._attach_volume_to_sg(context, volume_id)
+            mountpoint = self._attach_volume_to_sg(context, logical_volume_id)
         except Exception as err:
             msg = (_("Restore backup failed, err: %s."), err)
             LOG.error(msg)
@@ -721,7 +738,7 @@ class ControllerManager(manager.Manager):
                 {'status': fields.BackupStatus.AVAILABLE})
             raise exception.RestoreBackupFailed(reason=msg)
 
-        cinder_client = ClientFactory.create_client('cinder', context)
+        cinder_client = cinder.get_project_context_client(context)
         volume = cinder_client.volumes.get(volume_id)
         self.sync_attach_volumes[volume_id] = {
             'cinder_client': cinder_client,
@@ -1040,19 +1057,29 @@ class ControllerManager(manager.Manager):
             snapshot.update({'status': fields.SnapshotStatus.AVAILABLE})
             snapshot.save()
 
-    def create_volume(self, context, snapshot_id, volume_id):
+    def create_volume(self, context, snapshot_id, volume_type=None,
+                      availability_zone=None, name=None, description=None):
         LOG.info(_LI("Create new volume from snapshot, snapshot_id %s"),
                  snapshot_id)
         snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
 
-        cinder_client = ClientFactory.create_client("cinder", context)
-        retry = CONF.retry_attempts
+        cinder_client = cinder.get_project_context_client(context)
         try:
-            cinder_volume = cinder_client.volumes.get(volume_id)
-        except Exception:
-            msg = (_("Get the volume '%s' from cinder failed."), volume_id)
+            cinder_volume = cinder_client.volumes.create(
+                name=name,
+                description=description,
+                volume_type=volume_type,
+                availability_zone=availability_zone,
+                size=volume['size'])
+        except Exception as err:
+            msg = (_("Using cinder-client to create new volume failed, "
+                     "err: %s."), err)
             LOG.error(msg)
-            raise exception.InvalidVolume(reason=msg)
+            raise exception.CinderClientError(reason=msg)
+
+        retry = CONF.retry_attempts
+        volume_id = cinder_volume.id
         while cinder_volume.status == 'creating' and retry != 0:
             greenthread.sleep(CONF.sync_status_interval)
             try:
@@ -1077,9 +1104,9 @@ class ControllerManager(manager.Manager):
         try:
             mountpoint = self._attach_volume_to_sg(context, volume_id)
         except Exception as err:
-            msg = (_("Create volume from snapshot failed, err: %s."), err)
+            msg = (_("Attach volume to sg failed, err: %s."), err)
             LOG.error(msg)
-            raise exception.RestoreBackupFailed(reason=msg)
+            raise exception.AttachSGFailed(reason=msg)
 
         self.sync_attach_volumes[volume_id] = {
             'cinder_client': cinder_client,

@@ -287,3 +287,8 @@ class InvalidVolumeAttachMode(SGServiceException):
 
 class InvalidStatus(Invalid):
     message = _("Received a invalid status %(status)s.")
+
+
+class VolumeMetadataNotFound(NotFound):
+    message = _("Volume %(volume_id)s has no metadata with "
+                "key %(metadata_key)s.")
