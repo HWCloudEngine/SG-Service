@@ -19,21 +19,19 @@ from oslo_utils import excutils
 from oslo_utils import uuidutils
 from oslo_service import loopingcall
 from oslo_serialization import jsonutils
-from cinderclient.v2 import client as cinder_client
-from keystoneclient.v2_0 import client as kc
-from cinderclient import exceptions as cinder_exception
-from keystoneclient import exceptions as keystone_exception
 
 from sgsclient.exceptions import NotFound
 from sgservice.i18n import _, _LI, _LE
 from sgservice.common import constants
+from sgservice.common.clients import cinder
+from sgservice.common.clients import sgs
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice import objects
 from sgservice.objects import fields
 from sgservice import manager
 from sgservice import utils
-from sgservice import context
+from sgservice import context as sg_context
 
 proxy_manager_opts = [
     cfg.IntOpt('sync_interval',
@@ -43,33 +41,6 @@ proxy_manager_opts = [
     cfg.IntOpt('status_query_count',
                default=5,
                help='status query times'),
-    cfg.StrOpt('sgservice_username',
-               default='sgservice_username',
-               help='username for connecting to cinder in admin context'),
-    cfg.StrOpt('admin_password',
-               default='admin_password',
-               help='password for connecting to cinder in admin context'),
-    cfg.StrOpt('sgservice_tenant_name',
-               default='sgservice_tenant_name',
-               help='tenant name for connecting to cinder in admin context'),
-    cfg.StrOpt('sgservice_tenant_id',
-               default='sgservice_tenant_id',
-               help='tenant id for connecting to cinder in admin context'),
-    cfg.StrOpt('cascaded_availability_zone',
-               default='nova',
-               help='availability zone for cascaded OpenStack'),
-    cfg.StrOpt('keystone_auth_url',
-               default='http://127.0.0.1:5000/v2.0/',
-               help='value of keystone url'),
-    cfg.StrOpt('cascading_sgservice_url',
-               default='http://127.0.0.1:8975/v1/%(project_id)s',
-               help='value of cascading sgservice url'),
-    cfg.StrOpt('casacaded_cinder_url',
-               default='http://127.0.0.1:8776/v2/%(project_id)s',
-               help='value of cascaded cinder url'),
-    cfg.StrOpt('cascaded_region_name',
-               default='RegionOne',
-               help='Region name of this node'),
     cfg.IntOpt('sync_status_interval',
                default=60,
                help='sync resources status interval')
@@ -98,37 +69,36 @@ class SGServiceProxy(manager.Manager):
         self.sync_status_interval = CONF.sync_status_interval
         self.sync_volumes = {}
         sync_volumes_loop = loopingcall.FixedIntervalLoopingCall(
-                self._sync_volumes_status)
+            self._sync_volumes_status)
         sync_volumes_loop.start(interval=self.sync_status_interval,
-                                      initial_delay=self.sync_status_interval)
+                                initial_delay=self.sync_status_interval)
 
         self.sync_backups = {}
         sync_backups_loop = loopingcall.FixedIntervalLoopingCall(
-                self._sync_backups_status)
+            self._sync_backups_status)
         sync_backups_loop.start(interval=self.sync_status_interval,
-                                      initial_delay=self.sync_status_interval)
+                                initial_delay=self.sync_status_interval)
 
         self.sync_snapshots = {}
         sync_snapshots_loop = loopingcall.FixedIntervalLoopingCall(
-                self._sync_snapshots_status)
+            self._sync_snapshots_status)
         sync_snapshots_loop.start(interval=self.sync_status_interval,
-                                      initial_delay=self.sync_status_interval)
+                                  initial_delay=self.sync_status_interval)
 
         self.sync_replications = {}
         sync_replications_loop = loopingcall.FixedIntervalLoopingCall(
-                self._sync_replications_status)
+            self._sync_replications_status)
         sync_replications_loop.start(interval=self.sync_status_interval,
-                                      initial_delay=self.sync_status_interval)
+                                     initial_delay=self.sync_status_interval)
 
     def init_host(self, **kwargs):
         """ list all ing-status objects(volumes, snapshot, backups);
-            add to self.volumes_mapping_cache, backups_mapping_cache, snapshots_mapping_cache,
-            and replicates_mapping;
+            add to self.volumes_mapping_cache, backups_mapping_cache,
+            snapshots_mapping_cache, and replicates_mapping;
             start looping call to sync volumes, backups, snapshots,
             and replicates status;
         """
-        # TODO(luobin)
-        cxt = context.get_admin_context()
+        cxt = sg_context.get_admin_context()
         volumes = objects.VolumeList.get_all(cxt)
         for volume in volumes:
             if volume.status in (fields.VolumeStatus.ENABLING,
@@ -147,18 +117,18 @@ class SGServiceProxy(manager.Manager):
         backups = objects.BackupList.get_all(cxt)
         for backup in backups:
             if backup.status in (fields.BackupStatus.CREATING,
-                                   fields.BackupStatus,
+                                 fields.BackupStatus,
                                  fields.BackupStatus.RESTORING):
                 self.sync_backups[backup.id] = backup
 
         replications = objects.ReplicationList.get_all(cxt)
         for replication in replications:
-             if replication.status in (fields.ReplicateStatus.ENABLING,
-                                           fields.ReplicationStatus.DISABLING,
-                                           fields.ReplicationStatus.DELETING,
-                                           fields.ReplicationStatus.FAILING_OVER,
-                                           fields.ReplicationStatus.REVERSING):
-                 self.sync_replications[replication.id] = replication
+            if replication.status in (fields.ReplicateStatus.ENABLING,
+                                      fields.ReplicationStatus.DISABLING,
+                                      fields.ReplicationStatus.DELETING,
+                                      fields.ReplicationStatus.FAILING_OVER,
+                                      fields.ReplicationStatus.REVERSING):
+                self.sync_replications[replication.id] = replication
 
     def _sync_volumes_status(self):
         """ sync cascaded volumes'(in volumes_mapping_cache) status;
@@ -177,7 +147,7 @@ class SGServiceProxy(manager.Manager):
                     self.sync_volumes.pop(volume_id)
                 else:
                     LOG.error(_LE("Sync %s volume '%s' status failed."),
-                          item['action'], volume_id)
+                              item['action'], volume_id)
                     continue
 
             if csd_volume.status in (fields.VolumeStatus.ENABLING,
@@ -207,7 +177,8 @@ class SGServiceProxy(manager.Manager):
                     self.backups_mapping_cache.pop(backup_id)
                     self.sync_backups.pop(backup_id)
                 else:
-                    LOG.error(_LE("Sync %s backup '%s' status failed."), item['action'], backup_id)
+                    LOG.error(_LE("Sync %s backup '%s' status failed."),
+                              item['action'], backup_id)
                     continue
 
             if csd_backup.status in (fields.BackupStatus.CREATING,
@@ -237,7 +208,7 @@ class SGServiceProxy(manager.Manager):
                     self.sync_snapshots.pop(snapshot_id)
                 else:
                     LOG.error(_LE("Sync %s snapshot '%s' status failed."),
-                          item['action'], snapshot_id)
+                              item['action'], snapshot_id)
                     continue
 
             if csd_snapshot.status in (fields.SnapshotStatus.CREATING,
@@ -258,125 +229,79 @@ class SGServiceProxy(manager.Manager):
             master_volume_id = replication['master_volume']
             csd_master_volume_id = self._get_csd_volume_id(master_volume_id)
             try:
-                if item['force'] and item['action']=='failover':
+                if item['force'] and item['action'] == 'failover':
                     LOG.info(_LI("master is crash, force failover"))
                     csd_master_volume = None
                 else:
-                    csd_master_volume = self.adminSGSClient.volumes.get(csd_master_volume_id)
-            except Exception as exc:
-                LOG.error(_LE("Sync %s replication '%s' status failed."),
-                      item['action'], replication_id)
-                continue
-
-            slave_volume_id = replication['slave_volume']
-            csd_slave_volume_id = self._get_csd_volume_id(slave_volume_id)
-            try:
-                csd_slave_volume = self.adminSGSClient.volumes.get(csd_slave_volume_id)
+                    csd_master_volume = self.adminSGSClient.volumes.get(
+                        csd_master_volume_id)
             except Exception as exc:
                 LOG.error(_LE("Sync %s replication '%s' status failed."),
                           item['action'], replication_id)
                 continue
 
-            if csd_slave_volume.replicate_status in (fields.ReplicateStatus.ENABLING,
-                                               fields.ReplicateStatus.DISABLING,
-                                               fields.ReplicateStatus.DELETING,
-                                               fields.ReplicateStatus.FAILING_OVER,
-                                               fields.ReplicateStatus.REVERSING):
+            slave_volume_id = replication['slave_volume']
+            csd_slave_volume_id = self._get_csd_volume_id(slave_volume_id)
+            try:
+                csd_slave_volume = self.adminSGSClient.volumes.get(
+                    csd_slave_volume_id)
+            except Exception as exc:
+                LOG.error(_LE("Sync %s replication '%s' status failed."),
+                          item['action'], replication_id)
+                continue
+
+            if csd_slave_volume.replicate_status in (
+                    fields.ReplicateStatus.ENABLING,
+                    fields.ReplicateStatus.DISABLING,
+                    fields.ReplicateStatus.DELETING,
+                    fields.ReplicateStatus.FAILING_OVER,
+                    fields.ReplicateStatus.REVERSING):
                 continue
             else:
                 slave_volume = objects.Volume.get_by_id(slave_volume_id)
-                slave_volume.update({'replicate_status': csd_slave_volume.replicate_status})
+                slave_volume.update(
+                    {'replicate_status': csd_slave_volume.replicate_status})
                 slave_volume.save()
 
             # master is crash, force_failover
             # update replication.status=csd_slave_volume.replicate_status
             if csd_master_volume is None:
-                replication.update({'status': csd_slave_volume.replicate_status})
+                replication.update(
+                    {'status': csd_slave_volume.replicate_status})
                 self.sync_replications.pop(replication_id)
                 continue
 
-            if csd_master_volume.replicate_status in (fields.ReplicateStatus.ENABLING,
-                       fields.ReplicateStatus.DISABLING,
-                       fields.ReplicateStatus.DELETING,
-                       fields.ReplicateStatus.FAILING_OVER,
-                       fields.ReplicateStatus.REVERSING):
+            if csd_master_volume.replicate_status in (
+                    fields.ReplicateStatus.ENABLING,
+                    fields.ReplicateStatus.DISABLING,
+                    fields.ReplicateStatus.DELETING,
+                    fields.ReplicateStatus.FAILING_OVER,
+                    fields.ReplicateStatus.REVERSING):
                 continue
             else:
                 master_volume = objects.Volume.get_by_id(master_volume_id)
-                master_volume.update({'replicate_status': csd_master_volume.replicate_status})
+                master_volume.update(
+                    {'replicate_status': csd_master_volume.replicate_status})
                 master_volume.save()
 
             if master_volume.replicate_status == slave_volume.replicate_status:
                 replication.update({'status': master_volume.replicate_status})
-            elif master_volume.replicate_status == fields.ReplicateStatus.ERROR\
-                or slave_volume.replicate_status == fields.ReplicateStatus.ERROR:
+            elif master_volume.replicate_status == fields.ReplicateStatus.ERROR \
+                    or slave_volume.replicate_status == fields.ReplicateStatus.ERROR:
                 replication.update({'status': fields.ReplicationStatus.ERROR})
             self.sync_replications.pop(replication_id)
 
     def _get_cascaded_sgs_client(self, context=None):
-        # TODO(luobin): get cascaded sgs client
         if context is None:
-            # use use_name and password to get admin sgs client
-            return
+            return sgs.get_admin_client()
         else:
-            return
+            return sgs.get_project_context_client(context)
 
-    def _get_cascaded_cinder_client(self, context=None, retries=None):
-        try:
-            if context is None:
-                cinderclient = cinder_client.Client(
-                        auth_url=CONF.keystone_auth_url,
-                        region_name=CONF.cascaded_region_name,
-                        tenant_id=self.tenant_id,
-                        api_key=CONF.admin_password,
-                        username=CONF.cinder_username,
-                        insecure=True,
-                        timeout=120,
-                        retries=retries)
-            else:
-                ctx_dict = context.to_dict()
-
-                if not self._url:
-                    kwargs = {
-                        'auth_url': CONF.keystone_auth_url,
-                        'tenant_name': CONF.cinder_tenant_name,
-                        'username': CONF.cinder_username,
-                        'password': CONF.admin_password,
-                        'insecure': True
-                    }
-                    keystoneclient = kc.Client(**kwargs)
-                    management_url = self._get_management_url(keystoneclient, service_type='volumev2',
-                                                              attr='region',
-                                                              endpoint_type='publicURL',
-                                                              filter_value=CONF.cascaded_region_name)
-                    self._url = management_url.rpartition("/")[0]
-
-                LOG.info("before replace: self._url: %s", self._url)
-                management_url = self._url + '/' + ctx_dict.get("project_id")
-                LOG.info("after replace: management_url:%s", management_url)
-
-                cinderclient = cinder_client.Client(
-                        username=ctx_dict.get('user_id'),
-                        auth_url=cfg.CONF.keystone_auth_url,
-                        insecure=True,
-                        timeout=120,
-                        retries=retries)
-                cinderclient.client.auth_token = ctx_dict.get('auth_token')
-                cinderclient.client.management_url = management_url
-
-            LOG.info(_("cascade info: os_region_name:%s"), CONF.cascaded_region_name)
-            return cinderclient
-        except keystone_exception.Unauthorized:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Token unauthorized failed for keystoneclient '
-                            'constructed when get cascaded admin client'))
-        except cinder_exception.Unauthorized:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Token unauthorized failed for cascaded '
-                            'cinderClient constructed'))
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_('Failed to get cinder python client.'))
+    def _get_cascaded_cinder_client(self, context=None):
+        if context is None:
+            return cinder.get_admin_client()
+        else:
+            return cinder.get_project_context_client(context)
 
     def _gen_csd_volume_name(self, csg_volume_id):
         return 'volume@%s' % csg_volume_id
@@ -391,7 +316,7 @@ class SGServiceProxy(manager.Manager):
                        'name': csd_volume_name}
         try:
             vols = self.adminCinderClient.volumes.list(
-                    search_opts=search_opts, detailed=True)
+                search_opts=search_opts, detailed=True)
             if vols:
                 csd_volume_id = vols[0]._info['id']
                 self.volumes_mapping_cache[volume_id] = csd_volume_id
@@ -445,16 +370,16 @@ class SGServiceProxy(manager.Manager):
             access_mode = volume['access_mode']
             if access_mode is not None and access_mode != mode:
                 raise exception.InvalidVolume(
-                        reason=_('being attached by different mode'))
+                    reason=_('being attached by different mode'))
 
         host_name_sanitized = utils.sanitize_hostname(
-                host_name) if host_name else None
+            host_name) if host_name else None
         if instance_uuid:
             attachments = self.db.volume_attachment_get_all_by_instance_uuid(
-                    context, volume_id, instance_uuid)
+                context, volume_id, instance_uuid)
         else:
             attachments = self.db.volume_attachment_get_all_by_host(
-                    context, volume_id, host_name_sanitized)
+                context, volume_id, host_name_sanitized)
         if attachments:
             volume.update({'status': fields.VolumeStatus.IN_USE})
             volume.save()
@@ -467,7 +392,8 @@ class SGServiceProxy(manager.Manager):
 
         if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
             self.db.volume_attachment_update(
-                    context, attachment_id, {'attach_status': fields.VolumeStatus.ERROR_ATTACHING})
+                context, attachment_id,
+                {'attach_status': fields.VolumeStatus.ERROR_ATTACHING})
             raise exception.InvalidUUID(uuid=instance_uuid)
 
         self.db.volume_attached(context.elevated(),
@@ -531,7 +457,7 @@ class SGServiceProxy(manager.Manager):
                        'name': csd_backup_name}
         try:
             backups = self.adminSGSClient.backups.list(
-                    search_opts=search_opts)
+                search_opts=search_opts)
             if backups:
                 csd_backup_id = backups[0]._info['id']
                 self.backups_mapping_cache[backup_id] = csd_backup_id
@@ -588,12 +514,12 @@ class SGServiceProxy(manager.Manager):
             # step 2: call create backup to cascaded level
             csd_volume_id = self._get_csd_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            display_name = "backup@%s" % backup_id
+            display_name = self._gen_csd_backup_name(backup_id)
             csd_backup = csd_sgs_client.backups.create(
-                    volume_id=csd_volume_id,
-                    type=backup['type'],
-                    destination=backup['destination'],
-                    name=display_name)
+                volume_id=csd_volume_id,
+                type=backup['type'],
+                destination=backup['destination'],
+                name=display_name)
 
             # step 3: add to sync status map
             self.backups_mapping_cache[backup_id] = csd_backup['id']
@@ -647,11 +573,11 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.backup_update(
-                    context, backup_id,
-                    {'status': fields.BackupStatus.AVAILABLE})
+                context, backup_id,
+                {'status': fields.BackupStatus.AVAILABLE})
             self.db.volume_update(
-                    context, volume_id,
-                    {'status': fields.VolumeStatus.ERROR_RESTORING})
+                context, volume_id,
+                {'status': fields.VolumeStatus.ERROR_RESTORING})
             raise exception.InvalidVolume(reason=msg)
 
         expected_status = 'restoring'
@@ -684,13 +610,13 @@ class SGServiceProxy(manager.Manager):
         except Exception:
             with excutils.save_and_reraise_exception():
                 self.db.backup_update(
-                        context, backup_id,
-                        {'status': fields.BackupStatus.AVAILABLE})
+                    context, backup_id,
+                    {'status': fields.BackupStatus.AVAILABLE})
                 self.db.volume_update(
-                        context, volume_id,
-                        {'status': fields.VolumeStatus.ERROR_RESTORING})
+                    context, volume_id,
+                    {'status': fields.VolumeStatus.ERROR_RESTORING})
 
-    def export_record(self, backup_id):
+    def export_record(self, context, backup_id):
         LOG.info(_LI("Export backup record started, backup:%s"), backup_id)
         try:
             csd_backup_id = self._get_csd_backup_id(backup_id)
@@ -703,7 +629,7 @@ class SGServiceProxy(manager.Manager):
             LOG.error(msg)
             raise exception.InvalidBackup(reason=msg)
 
-    def import_record(self, backup_id, backup_record):
+    def import_record(self, context, backup_id, backup_record):
         LOG.info(_LI('Import record started, backup_record: %s.'),
                  backup_record)
         backup = objects.Backup.get_by_id(context, backup_id)
@@ -738,7 +664,7 @@ class SGServiceProxy(manager.Manager):
         volume.update({'replicate_status': fields.ReplicateStatus.ERROR})
         volume.save()
         peer_volume_id = volume['peer_volume']
-        peer_volume = objects.Volume.get_by_id(context, peer_volume_id)
+        peer_volume = objects.Volume.get_by_id(sg_context, peer_volume_id)
         peer_volume.update({'replicate_status': fields.ReplicateStatus.ERROR})
         peer_volume.save()
         replication.update({'status': fields.ReplicationStatus.ERROR})
@@ -757,7 +683,7 @@ class SGServiceProxy(manager.Manager):
                        'name': csd_snapshot_name}
         try:
             snapshots = self.adminSGSClient.snapshots.list(
-                    search_opts=search_opts)
+                search_opts=search_opts)
             if snapshots:
                 csd_snapshot_id = snapshots[0]._info['id']
                 self.snapshots_mapping_cache[snapshot_id] = csd_snapshot_id
@@ -786,9 +712,9 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client = self._get_cascaded_sgs_client(context)
             display_name = self._gen_csd_snapshot_name(snapshot_id)
             csd_snapshot = csd_sgs_client.snapshots.create(
-                    volume_id=csd_volume_id,
-                    name=display_name,
-                    checkpoint_id=snapshot['checkpoint-id'])
+                volume_id=csd_volume_id,
+                name=display_name,
+                checkpoint_id=snapshot['checkpoint-id'])
 
             # step 3: add to sync status
             self.sync_snapshots[snapshot_id] = {'snapshot': snapshot,
@@ -866,8 +792,8 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.volume_update(
-                    context, volume_id,
-                    {'replicate_status': fields.ReplicateStatus.ERROR})
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
             raise exception.InvalidVolume(reason=msg)
 
         try:
@@ -878,16 +804,18 @@ class SGServiceProxy(manager.Manager):
             peer_volume_id = volume['peer_volume']
             csd_peer_volume_id = self._get_csd_volume_id(peer_volume_id)
             replication_id = volume['replication_id']
-            replication = objects.Replication.get_by_id(context, replication_id)
+            replication = objects.Replication.get_by_id(context,
+                                                        replication_id)
             csd_sgs_client.replicates.create(volume_id=csd_volume_id,
                                              mode=mode,
                                              peer_volume=csd_peer_volume_id,
                                              replication_id=replication_id)
 
             # step 3: add to sync status map
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': False,
-                                                      'action': 'create'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': False,
+                'action': 'create'}
 
         except Exception:
             with excutils.save_and_reraise_exception():
@@ -907,8 +835,8 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.volume_update(
-                    context, volume_id,
-                    {'replicate_status': fields.ReplicateStatus.ERROR})
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
             raise exception.InvalidVolume(reason=msg)
 
         try:
@@ -918,9 +846,10 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client.replicates.delete(csd_volume_id)
 
             # step 3: add to sync status map
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': False,
-                                                      'action': 'delete'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': False,
+                'action': 'delete'}
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
@@ -939,8 +868,8 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.volume_update(
-                    context, volume_id,
-                    {'replicate_status': fields.ReplicateStatus.ERROR})
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
             raise exception.InvalidVolume(reason=msg)
 
         try:
@@ -950,9 +879,10 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client.replicates.enable(csd_volume_id)
 
             # step 3: add to sync status map
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': False,
-                                                      'action': 'enable'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': False,
+                'action': 'enable'}
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
@@ -973,8 +903,8 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.volume_update(
-                    context, volume_id,
-                    {'replicate_status': fields.ReplicateStatus.ERROR})
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
             raise exception.InvalidVolume(reason=msg)
 
         try:
@@ -984,14 +914,15 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client.replicates.disable(csd_volume_id)
 
             # step 3: add to sync status
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': False,
-                                                      'action': 'disable'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': False,
+                'action': 'disable'}
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
 
-    def failover_replicate(self, context, volume_id, force = False):
+    def failover_replicate(self, context, volume_id, force=False):
         # step 1: check status in cascading level
         volume = objects.Volume.get_by_id(context, volume_id)
         replication_id = volume['replication_id']
@@ -1004,8 +935,8 @@ class SGServiceProxy(manager.Manager):
                    % {'expected_status': expected_status,
                       'actual_status': actual_status})
             self.db.volume_update(
-                    context, volume_id,
-                    {'replicate_status': fields.ReplicateStatus.ERROR})
+                context, volume_id,
+                {'replicate_status': fields.ReplicateStatus.ERROR})
             raise exception.InvalidVolume(reason=msg)
 
         try:
@@ -1015,9 +946,10 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client.replicates.failover(csd_volume_id)
 
             # step 3: add to sync status
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': force,
-                                                      'action': 'failover'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': force,
+                'action': 'failover'}
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
@@ -1044,9 +976,26 @@ class SGServiceProxy(manager.Manager):
             csd_sgs_client.replicates.reverse(csd_volume_id)
 
             # step 3: add to sync status
-            self.sync_replications[replication_id] = {'replication': replication,
-                                                      'force': False,
-                                                      'action': 'reverse'}
+            self.sync_replications[replication_id] = {
+                'replication': replication,
+                'force': False,
+                'action': 'reverse'}
         except Exception:
             with excutils.save_and_reraise_exception():
                 self._update_replication_error(volume, replication)
+
+    def create_volume(self, context, snapshot_id, volume_type=None,
+                      availability_zone=None, name=None, description=None):
+        try:
+            csd_snapshot_id = self._get_csd_snapshot_id(snapshot_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            csd_sgs_client.volumes.create(
+                snapshot_id=csd_snapshot_id,
+                volume_type=volume_type,
+                availability_zone=availability_zone,
+                name=name,
+                description=description)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                msg = _("Create volume from snapshot failed")
+                LOG.error(msg)

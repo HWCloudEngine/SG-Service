@@ -21,8 +21,8 @@ from oslo_utils import excutils
 import webob.exc
 
 from sgservice.common import constants
+from sgservice.common.clients import cinder
 from sgservice import context
-from sgservice.controller.client_factory import ClientFactory
 from sgservice.controller import rpcapi as protection_rpcapi
 from sgservice.db import base
 from sgservice import exception
@@ -119,7 +119,7 @@ class API(base.Base):
         except exception.VolumeNotFound:
             pass
 
-        cinder_client = ClientFactory.create_client("cinder", context)
+        cinder_client = cinder.get_project_context_client(context)
         try:
             cinder_volume = cinder_client.volumes.get(volume_id)
         except Exception:
@@ -412,7 +412,7 @@ class API(base.Base):
         self.controller_rpcapi.delete_backup(context, backup)
 
     def restore_backup(self, context, backup, volume_id):
-        cinder_client = ClientFactory.create_client("cinder", context)
+        cinder_client = cinder.get_project_context_client(context)
         try:
             c_volume = cinder_client.volumes.get(volume_id)
         except Exception:
@@ -671,21 +671,9 @@ class API(base.Base):
             LOG.error(msg)
             raise exception.InvalidInput(reason=msg)
 
-        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
-        cinder_client = ClientFactory.create_client("cinder", context)
-        try:
-            cinder_volume = cinder_client.volumes.create(
-                name=name,
-                description=description,
-                volume_type=volume_type,
-                availability_zone=availability_zone,
-                size=volume['size'])
-        except Exception as err:
-            msg = (_("Using cinder-client to create new volume failed, "
-                     "err: %s."), err)
-            LOG.error(msg)
-            raise exception.CinderClientError(reason=msg)
-        self.controller_rpcapi.create_volume(context, snapshot, cinder_volume)
+        self.controller_rpcapi.create_volume(context, snapshot, volume_type,
+                                             availability_zone, name,
+                                             description)
 
     def get_replication(self, context, replication_id):
         try:
