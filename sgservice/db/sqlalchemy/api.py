@@ -560,6 +560,11 @@ def volume_destroy(context, volume_id):
         volume_ref = _volume_get(context, volume_id, session=session)
         volume_ref.update(updated_values)
         volume_ref.save(session)
+        model_query(context, models.VolumeMetadata, session=session). \
+            filter_by(volume_id=volume_id). \
+            update({'deleted': True,
+                    'deleted_at': timeutils.utcnow(),
+                    'updated_at': literal_column('updated_at')})
     del updated_values['updated_at']
     return updated_values
 
@@ -1149,6 +1154,7 @@ def volume_detached(context, volume_id, attachment_id):
             volume_ref['attach_status'] = 'attached'
             volume_ref.save(session=session)
 
+
 @handle_db_data_error
 @require_context
 def attachment_destroy(context, attachment_id):
@@ -1299,6 +1305,76 @@ def _checkpoint_get(context, checkpoint_id, session=None, project_only=True):
         raise exception.CheckpointNotFound(checkpoint_id=checkpoint_id)
 
     return result
+
+
+###################
+
+@require_context
+@require_volume_exists
+def _volume_metadata_get_query(context, volume_id, session=None):
+    return model_query(context, models.VolumeMetadata,
+                       session=session, read_deleted="no"). \
+        filter_by(volume_id=volume_id)
+
+
+@require_context
+@require_volume_exists
+def _volume_metadata_get(context, volume_id, session=None):
+    rows = _volume_metadata_get_query(context, volume_id,
+                                      session=session).all()
+    result = {}
+    for row in rows:
+        result[row['key']] = row['value']
+    return result
+
+
+@require_context
+@require_volume_exists
+def _volume_metadata_get_item(context, volume_id, key, session=None):
+    result = _volume_metadata_get_query(
+        context, volume_id, session=session).filter_by(key=key).first()
+    if not result:
+        exception.VolumeMetadataNotFound(id=volume_id, metadata_key=key)
+    return result
+
+
+@require_context
+@require_volume_exists
+@_retry_on_deadlock
+def volume_metadata_delete(context, volume_id, key):
+    session = get_session()
+    updated_values = {
+        'deleted': True,
+        'deleted_at': timeutils.utcnow(),
+        'updated_at': literal_column('updated_at')}
+    with session.begin():
+        metadata_ref = _volume_metadata_get_item(context, volume_id,
+                                                 key, session)
+        metadata_ref.update(updated_values)
+
+
+@require_context
+@require_volume_exists
+@handle_db_data_error
+@_retry_on_deadlock
+def volume_metadata_update(context, volume_id, metadata, delete=False):
+    session = get_session()
+    deleted_values = {
+        'deleted': True,
+        'deleted_at': timeutils.utcnow(),
+        'updated_at': literal_column('updated_at')}
+    with session.begin():
+        if delete:
+            volume_metadata = _volume_metadata_get(context, volume_id, session)
+            deleted_metadata = [key for key in volume_metadata not in metadata]
+            for key in deleted_metadata:
+                metadata_ref = _volume_metadata_get_item(context, volume_id,
+                                                         key, session)
+                metadata_ref.update(deleted_values)
+        for key in metadata:
+            metadata_ref = _volume_metadata_get_item(context, volume_id,
+                                                     key, session)
+            metadata_ref.update({'value': metadata[key]})
 
 
 ###################

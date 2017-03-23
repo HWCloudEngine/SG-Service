@@ -39,6 +39,6 @@ def main():
     CONF(sys.argv[1:], project='sgservice',
          version=version.version_string())
     logging.setup(CONF, "sgservice")
-    server = service.Service.create(binary='sgservice-proxy')
+    server = service.Service.create(binary='sgservice-controller')
     service.serve(server)
     service.wait()

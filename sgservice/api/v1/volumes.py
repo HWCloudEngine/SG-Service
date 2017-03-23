@@ -141,8 +141,10 @@ class VolumesController(wsgi.Controller):
 
         name = params.get('name', None)
         description = params.get('description', None)
+        metadata = params.get('metadata', None)
         volume = self.service_api.enable_sg(context, id, name=name,
-                                            description=description)
+                                            description=description,
+                                            metadata=metadata)
         return self._view_builder.detail(req, volume)
 
     @wsgi.action('disable')

@@ -227,6 +227,21 @@ class VolumeAttachment(BASE, SGServiceBase):
                     'Volume.deleted == 0)')
 
 
+class VolumeMetadata(BASE, SGServiceBase):
+    """Represents a metadata key/value pair for a volume."""
+    __tablename__ = 'volume_metadata'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255))
+    value = Column(String(255))
+    volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
+    volume = orm.relationship(
+        Volume, backref="volume_metadata",
+        foreign_keys=volume_id,
+        primaryjoin='and_('
+                    'VolumeMetadata.volume_id == Volume.id,'
+                    'VolumeMetadata.deleted == False)')
+
+
 def register_models():
     """Register Models and create metadata.
 
