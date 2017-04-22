@@ -43,6 +43,10 @@ class ControllerAPI(object):
         self.client = rpc.get_client(target, version_cap=None,
                                      serializer=serializer)
 
+    def delete(self, ctxt, volume):
+        cctxt = self.client.prepare(server=volume['host'], version='1.0')
+        return cctxt.cast(ctxt, 'delete', volume_id=volume.id)
+
     def enable_sg(self, ctxt, volume):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
         return cctxt.cast(ctxt, 'enable_sg', volume_id=volume.id)
@@ -93,16 +97,16 @@ class ControllerAPI(object):
 
     def create_snapshot(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.cast(ctxt, 'create_snapshot', snapshot_id=snapshot.id,
+        return cctxt.call(ctxt, 'create_snapshot', snapshot_id=snapshot.id,
                           volume_id=volume.id)
 
     def delete_snapshot(self, ctxt, snapshot):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.cast(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
+        return cctxt.call(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
 
     def rollback_snapshot(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.cast(ctxt, 'rollback_snapshot', snapshot_id=snapshot.id,
+        return cctxt.call(ctxt, 'rollback_snapshot', snapshot_id=snapshot.id,
                           volume_id=volume.id)
 
     def create_replicate(self, ctxt, volume):
@@ -121,19 +125,18 @@ class ControllerAPI(object):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
         return cctxt.cast(ctxt, 'delete_replicate', volume_id=volume.id)
 
-    def failover_replicate(self, ctxt, volume, force=False):
+    def failover_replicate(self, ctxt, volume, checkpoint_id=None,
+                           snapshot_id=None, force=False):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
-        return cctxt.cast(ctxt, 'failover_replicate', volume_id=volume.id,
+        return cctxt.call(ctxt, 'failover_replicate', volume_id=volume.id,
+                          checkpoint_id=checkpoint_id, snapshot_id=snapshot_id,
                           force=force)
 
     def reverse_replicate(self, ctxt, volume):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
         return cctxt.cast(ctxt, 'reverse_replicate', volume_id=volume.id)
 
-    def create_volume(self, ctxt, snapshot, volume_type, availability_zone,
-                      name, description):
+    def create_volume(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
         return cctxt.cast(ctxt, 'create_volume', snapshot_id=snapshot.id,
-                          volume_type=volume_type,
-                          availability_zone=availability_zone,
-                          name=name, description=description)
+                          volume_id=volume.id)

@@ -72,6 +72,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'replicate_mode': fields.StringField(nullable=True),
         'access_mode': fields.StringField(nullable=True),
         'driver_data': fields.StringField(nullable=True),
+        'snapshot_id': fields.StringField(nullable=True),
 
         'metadata': fields.DictOfStringsField(nullable=True),
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
@@ -126,6 +127,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         changes = super(Volume, self).obj_what_changed()
         if 'metadata' in self and self.metadata != self._orig_metadata:
             changes.add('metadata')
+        return changes
 
     @classmethod
     def _from_db_object(cls, context, volume, db_volume, expected_attrs=None):
@@ -163,8 +165,16 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         #                                       reason=_('already created'))
         updates = self.sgservice_obj_get_changes()
 
-        db_volume = db.volume_create(self._context, updates)
-        self._from_db_object(self._context, self, db_volume)
+        metadata = None
+        if updates and 'metadata' in updates:
+            metadata = updates.pop('metadata', None)
+        if updates:
+            db_volume = db.volume_create(self._context, updates)
+            self._from_db_object(self._context, self, db_volume)
+        if metadata:
+            self.metadata = db.volume_metadata_update(self._context,
+                                                      self.id, metadata,
+                                                      True)
 
     @base.remotable
     def save(self):
@@ -175,7 +185,8 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
                 # self.metadata will be deleted
                 metadata = updates.pop('metadata', None)
                 self.metadata = db.volume_metadata_update(self._context,
-                                                          self.id, metadata)
+                                                          self.id, metadata,
+                                                          True)
             if updates:
                 db.volume_update(self._context, self.id, updates)
         self.obj_reset_changes()
@@ -188,9 +199,16 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         self.obj_reset_changes(updated_values.keys())
 
     @base.remotable_classmethod
-    def reenable(cls, context, volume_id, values):
-        orm_obj = db.volume_reenable(context, volume_id, values)
-        return cls._from_db_object(context, cls(context), orm_obj)
+    def reset(cls, context, volume_id, values):
+        metadata = None
+        if values and 'metadata' in values:
+            metadata = values.pop('metadata')
+
+        orm_obj = db.volume_reset(context, volume_id, values)
+        volume = cls._from_db_object(context, cls(context), orm_obj)
+        volume.metadata = db.volume_metadata_update(context, volume.id,
+                                                    metadata, True)
+        return volume
 
     def obj_load_attr(self, attrname):
         if attrname not in self.OPTIONAL_FIELDS:
@@ -218,6 +236,10 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
 
         if not md_was_changed:
             self.obj_reset_changes(['metadata'])
+
+    def update_metadata(self, metadata, delete=False):
+        self.metadata = db.volume_metadata_update(self._context, self.id,
+                                                  metadata, delete)
 
 
 @base.SGServiceObjectRegistry.register

@@ -78,6 +78,7 @@ class Replication(BASE, SGServiceBase):
     display_description = Column(String(255))
     master_volume = Column(String(36))
     slave_volume = Column(String(36))
+    force = Column(Boolean, default=False)
 
     @property
     def name(self):
@@ -136,6 +137,7 @@ class Volume(BASE, SGServiceBase):
     replicate_mode = Column(String(64))
     access_mode = Column(String(64))
     driver_data = Column(Text)
+    snapshot_id = Column(String(36), nullable=True)
 
     @property
     def name(self):
@@ -196,6 +198,7 @@ class Backup(BASE, SGServiceBase):
     parent_id = Column(String(36), nullable=True)
     num_dependent_backups = Column(Integer)
     data_timestamp = Column(DateTime)
+    restore_volume_id = Column(String(36), nullable=True)
 
     @property
     def name(self):

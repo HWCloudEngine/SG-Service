@@ -22,6 +22,7 @@ from sgservice.api.openstack import wsgi
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
+from sgservice.objects import fields
 from sgservice import utils
 
 query_volume_filters_opts = cfg.ListOpt(
@@ -51,10 +52,16 @@ class VolumeViewBuilder(common.ViewBuilder):
             'volume': {
                 'id': volume.get('id'),
                 'status': volume.get('status'),
+                'name': volume.get('display_name'),
+                'description': volume.get('display_description'),
+                'size': volume.get('size'),
                 'availability_zone': volume.get('availability_zone'),
                 'replication_zone': volume.get('replication_zone'),
                 'replication_id': volume.get('replication_id'),
                 'replicate_status': volume.get('replicate_status'),
+                'replicate_mode': volume.get('replicate_mode'),
+                'peer_volume': volume.get('peer_volume'),
+                'access_mode': volume.get('access_mode')
             }
         }
         return volume_ref
@@ -110,6 +117,14 @@ class VolumesController(wsgi.Controller):
         volume = self.service_api.get(context, id)
         return self._view_builder.detail(req, volume)
 
+    def delete(self, req, id):
+        """Delete a sg volume."""
+        LOG.info(_LI("Delete sg volume, volume_id: %s"), id)
+        context = req.environ['sgservice.context']
+        volume = self.service_api.get(context, id)
+        self.service_api.delete(context, volume)
+        return webob.Response(status_int=202)
+
     def index(self, req):
         """Returns a list of volumes, transformed through view builder."""
         LOG.info(_LI("Show volume list"))
@@ -123,6 +138,12 @@ class VolumesController(wsgi.Controller):
             context, filters, self._get_volume_filter_options())
         utils.check_filters(filters)
 
+        if 'name' in sort_keys:
+            sort_keys[sort_keys.index('name')] = 'display_name'
+
+        if 'name' in filters:
+            filters['display_name'] = filters.pop('name')
+
         volumes = self.service_api.get_all(
             context, marker=marker, limit=limit, sort_keys=sort_keys,
             sort_dirs=sort_dirs, filters=filters, offset=offset)
@@ -130,6 +151,84 @@ class VolumesController(wsgi.Controller):
         retval_volumes = self._view_builder.detail_list(req, volumes)
         LOG.info(_LI("Show volume list request issued successfully."))
         return retval_volumes
+
+    def create(self, req, body):
+        """Creates a new volume from snapshot or checkpoint."""
+        LOG.debug('Create volume from snapshot, request body: %s', body)
+        context = req.environ['sgservice.context']
+        volume = body['volume']
+
+        volume_type = volume.get('volume_type', None)
+        availability_zone = volume.get('availability_zone', None)
+        volume_id = volume.get('volume_id', None)
+
+        # create from snapshot
+        snapshot_id = volume.get('snapshot_id')
+        if snapshot_id is not None:
+            name = volume.get('name', 'volume-%s' % snapshot_id)
+            description = volume.get('description', name)
+            snapshot = self.service_api.get_snapshot(context, snapshot_id)
+            volume = self.service_api.create_volume(
+                context, snapshot=snapshot,
+                volume_type=volume_type,
+                availability_zone=availability_zone,
+                description=description,
+                name=name, volume_id=volume_id)
+            return self._view_builder.detail(req, volume)
+
+        # create from checkpoint
+        checkpoint_id = volume.get('checkpoint_id')
+        if checkpoint_id is not None:
+            name = volume.get('name', 'volume-%s' % checkpoint_id)
+            description = volume.get('description', name)
+            checkpoint = self.service_api.get_checkpoint(context,
+                                                         checkpoint_id)
+            volume = self.service_api.create_volume(
+                context, checkpoint=checkpoint,
+                volume_type=volume_type,
+                availability_zone=availability_zone,
+                description=description,
+                name=name, volume_id=volume_id)
+            return self._view_builder.detail(req, volume)
+
+        msg = _('Incorrect request body format, create volume must specified '
+                'a snapshot or checkpoint')
+        raise webob.exc.HTTPBadRequest(explanation=msg)
+
+    def update(self, req, id, body):
+        """Update a volume."""
+        LOG.info(_LI("Update snapshot with id: %s"), id)
+        context = req.environ['sgservice.context']
+        if not body:
+            msg = _("Missing request body")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        if 'volume' not in body:
+            msg = (_("Missing required element '%s' in request body"),
+                   'volume')
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+
+        volume = body['volume']
+        update_dict = {}
+
+        valid_update_keys = (
+            'name',
+            'description',
+            'display_name',
+            'display_description',
+        )
+        for key in valid_update_keys:
+            if key in volume:
+                update_dict[key] = volume[key]
+        self.validate_name_and_description(update_dict)
+        if 'name' in update_dict:
+            update_dict['display_name'] = update_dict.pop('name')
+        if 'description' in update_dict:
+            update_dict['display_description'] = update_dict.pop('description')
+
+        volume = self.service_api.get(context, id)
+        volume.update(update_dict)
+        volume.save()
+        return self._view_builder.detail(req, volume)
 
     @wsgi.action('enable')
     def enable(self, req, id, body):
@@ -250,81 +349,22 @@ class VolumesController(wsgi.Controller):
         self.service_api.detach(context, volume, attachment_id)
         return webob.Response(status_int=202)
 
-    def create(self, req, body):
-        """Creates a new volume from snapshot or checkpoint."""
-        LOG.debug('Create volume from snapshot, request body: %s', body)
+    @wsgi.action('reset_status')
+    def reset_status(self, req, id, body):
+        """reset volume status"""
+        LOG.info(_LI("Reset volume status, id: %s"), id)
+        status = body['reset_status'].get('status',
+                                          fields.VolumeStatus.ENABLED)
+        if status not in fields.VolumeStatus.ALL:
+            msg = _("Invalid status provided.")
+            LOG.error(msg)
+            raise exception.InvalidStatus(status=status)
+
         context = req.environ['sgservice.context']
-        volume = body['volume']
-
-        volume_type = volume.get('volume_type', None)
-        availability_zone = volume.get('availability_zone', None)
-
-        # create from snapshot
-        snapshot_id = volume.get('snapshot_id')
-        if snapshot_id is not None:
-            name = volume.get('name', 'volume-%s' % snapshot_id)
-            description = volume.get('description', name)
-            snapshot = self.service_api.get_snapshot(context, snapshot_id)
-            self.service_api.create_volume(context, snapshot=snapshot,
-                                           volume_type=volume_type,
-                                           availability_zone=availability_zone,
-                                           description=description,
-                                           name=name)
-            return webob.Response(status_int=202)
-
-        # create from checkpoint
-        checkpoint_id = volume.get('checkpoint_id')
-        if checkpoint_id is not None:
-            name = volume.get('name', 'volume-%s' % checkpoint_id)
-            description = volume.get('description', name)
-            checkpoint = self.service_api.get_checkpoint(context,
-                                                         checkpoint_id)
-            self.service_api.create_volume(context, checkpoint=checkpoint,
-                                           volume_type=volume_type,
-                                           availability_zone=availability_zone,
-                                           description=description,
-                                           name=name)
-            return webob.Response(status_int=202)
-
-        msg = _('Incorrect request body format, create volume must specified '
-                'a snapshot or checkpoint')
-        raise webob.exc.HTTPBadRequest(explanation=msg)
-
-    def update(self, req, id, body):
-        """Update a volume."""
-        LOG.info(_LI("Update snapshot with id: %s"), id)
-        context = req.environ['sgservice.context']
-        if not body:
-            msg = _("Missing request body")
-            raise webob.exc.HTTPBadRequest(explanation=msg)
-        if 'volume' not in body:
-            msg = (_("Missing required element '%s' in request body"),
-                   'volume')
-            raise webob.exc.HTTPBadRequest(explanation=msg)
-
-        volume = body['volume']
-        update_dict = {}
-
-        valid_update_keys = (
-            'name',
-            'description',
-            'display_name',
-            'display_description',
-        )
-        for key in valid_update_keys:
-            if key in volume:
-                update_dict[key] = volume[key]
-        self.validate_name_and_description(update_dict)
-        if 'name' in update_dict:
-            update_dict['display_name'] = update_dict.pop('name')
-        if 'description' in update_dict:
-            update_dict['display_description'] = update_dict.pop('description')
-
         volume = self.service_api.get(context, id)
-        volume.update(update_dict)
+        volume.status = status
         volume.save()
-
-        return self._view_builder.detail(req, volume)
+        return webob.Response(status_int=202)
 
 
 def create_resource():

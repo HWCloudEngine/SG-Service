@@ -47,7 +47,9 @@ class Backup(base.SGServicePersistentObject, base.SGServiceObject,
         'driver_data':  fields.StringField(nullable=True),
         'parent_id': fields.StringField(nullable=True),
         'num_dependent_backups': fields.IntegerField(default=0),
-        'data_timestamp': fields.DateTimeField(nullable=True)
+        'data_timestamp': fields.DateTimeField(nullable=True),
+
+        'restore_volume_id': fields.StringField(nullable=True)
     }
 
     # obj_extra_fields is used to hold properties that are not

@@ -399,8 +399,8 @@ def volume_create(context, values):
     return IMPL.volume_create(context, values)
 
 
-def volume_reenable(context, id, values):
-    """Re-enable a volume and set the given properties update it .
+def volume_reset(context, id, values):
+    """Reset a deleted volume and set the given properties update it .
 
     :param context: The security context
     :param id: ID of the volume
@@ -411,7 +411,7 @@ def volume_reenable(context, id, values):
 
     Raises VolumeNotFound if volume with the given ID doesn't exist.
     """
-    return IMPL.volume_reenable(context, id, values)
+    return IMPL.volume_reset(context, id, values)
 
 
 def volume_update(context, id, values):
@@ -601,10 +601,10 @@ def checkpoint_get_all_by_project(context, project_id, filters=None,
                                               sort_dirs=sort_dirs)
 
 
-def checkpoint_get_all_by_replication(context, replication_id, filters=None):
+def checkpoint_get_all_by_replication(context, replication_id, filters=None,):
     """Get all checkpoints belonging to a replication."""
-    return IMPL.checkpoint_get_all_by_replication(context, replication_id,
-                                                  filters=filters)
+    return IMPL.checkpoint_get_all_by_replication(
+        context, replication_id, filters=filters)
 
 
 ###############

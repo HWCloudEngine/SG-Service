@@ -51,10 +51,13 @@ class CheckpointViewBuilder(common.ViewBuilder):
         checkpoint_ref = {
             'checkpoint': {
                 'id': checkpoint.get('id'),
+                'user_id': checkpoint.get('user_id'),
                 'status': checkpoint.get('status'),
                 'name': checkpoint.get('display_name'),
                 'description': checkpoint.get('display_description'),
-                'replication_id': checkpoint.get('replication_id')
+                'replication_id': checkpoint.get('replication_id'),
+                'master_snapshot': checkpoint.get('master_snapshot'),
+                'slave_snapshot': checkpoint.get('salve_snapshot')
             }
         }
         return checkpoint_ref
@@ -142,6 +145,12 @@ class CheckpointsController(wsgi.Controller):
             context, filters, self._get_checkpoint_filter_options())
         utils.check_filters(filters)
 
+        if 'name' in sort_keys:
+            sort_keys[sort_keys.index('name')] = 'display_name'
+
+        if 'name' in filters:
+            filters['display_name'] = filters.pop('name')
+
         checkpoints = self.service_api.get_all_checkpoints(
             context, marker=marker, limit=limit, sort_keys=sort_keys,
             sort_dirs=sort_dirs, filters=filters, offset=offset)
@@ -163,12 +172,10 @@ class CheckpointsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = checkpoint.get('name')
-        if name is None:
-            name = 'checkpoint-%s' % replication_id
-        description = checkpoint.get('description')
+        name = checkpoint.get('name', None)
+        description = checkpoint.get('description', None)
         if description is None:
-            description = name
+            description = 'checkpoint-%s' % replication_id
 
         replication = self.service_api.get_replication(context,
                                                        replication_id)
@@ -176,14 +183,6 @@ class CheckpointsController(wsgi.Controller):
                                                         description,
                                                         replication)
         return self._view_builder.detail(req, checkpoint)
-
-    def rollback(self, req, id):
-        """Rollback a checkpoint"""
-        LOG.info(_LI("Rollback checkpoint with id: %s"), id)
-        context = req.environ['sgservice.context']
-        checkpoint = self.service_api.get_checkpoint(context, id)
-        rollback = self.service_api.rollback_checkpoint(context, checkpoint)
-        return self._view_builder.rollback_summary(req, rollback)
 
     def update(self, req, id, body):
         """Update a checkpoint."""
@@ -221,10 +220,21 @@ class CheckpointsController(wsgi.Controller):
 
         return self._view_builder.detail(req, checkpoint)
 
+    @wsgi.action('rollback')
+    def rollback(self, req, id, body):
+        """Rollback a checkpoint"""
+        LOG.info(_LI("Rollback checkpoint with id: %s"), id)
+        context = req.environ['sgservice.context']
+        checkpoint = self.service_api.get_checkpoint(context, id)
+        rollback = self.service_api.rollback_checkpoint(context, checkpoint)
+        return self._view_builder.rollback_summary(req, rollback)
+
+    @wsgi.action('reset_status')
     def reset_status(self, req, id, body):
         """reset checkpoint status"""
         LOG.info(_LI("Reset checkpoint status, id: %s"), id)
-        status = body.get('status', None)
+        status = body['reset_status'].get('status',
+                                          fields.CheckpointStatus.AVAILABLE)
         if status not in fields.CheckpointStatus.ALL:
             msg = _("Invalid status provided.")
             LOG.error(msg)
@@ -234,6 +244,23 @@ class CheckpointsController(wsgi.Controller):
         checkpoint = self.service_api.get_checkpoint(context, id)
         checkpoint.status = status
         checkpoint.save()
+        # reset master snapshot status
+        try:
+            master_snapshot = self.service_api.get_snapshot(
+                context, checkpoint.master_snapshot)
+            master_snapshot.status = status
+            master_snapshot.save()
+        except Exception:
+            pass
+        # reset slave snapshot status
+        try:
+            slave_snapshot = self.service_api.get_snapshot(
+                context, checkpoint.slave_snapshot)
+            slave_snapshot.status = status
+            slave_snapshot.save()
+        except Exception:
+            pass
+
         return webob.Response(status_int=202)
 
 

@@ -150,3 +150,10 @@ class CheckpointList(base.ObjectListBase, base.SGServiceObject):
             sort_dirs=sort_dirs)
         return base.obj_make_list(context, cls(context), objects.Checkpoint,
                                   checkpoints)
+
+    @classmethod
+    def get_all_by_replication(cls, context, replication_id, filters=None):
+        checkpoints = db.checkpoint_get_all_by_replication(
+            context, replication_id=replication_id, filters=filters)
+        return base.obj_make_list(context, cls(context), objects.Checkpoint,
+                                  checkpoints)

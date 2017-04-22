@@ -523,7 +523,7 @@ def volume_create(context, values):
 
 
 @require_context
-def volume_reenable(context, volume_id, values):
+def volume_reset(context, volume_id, values):
     session = get_session()
     values['deleted'] = False
     values['deleted_at'] = None
@@ -532,6 +532,10 @@ def volume_reenable(context, volume_id, values):
                                  read_deleted='yes')
         volume_ref.update(values)
         volume_ref.save(session)
+        model_query(context, models.VolumeMetadata, session=session,
+                    read_deleted='yes').filter_by(volume_id=volume_id). \
+            update({'deleted': False,
+                    'deleted_at': None})
     return volume_ref
 
 
@@ -1319,7 +1323,7 @@ def _volume_metadata_get_query(context, volume_id, session=None):
 
 @require_context
 @require_volume_exists
-def _volume_metadata_get(context, volume_id, session=None):
+def volume_metadata_get(context, volume_id, session=None):
     rows = _volume_metadata_get_query(context, volume_id,
                                       session=session).all()
     result = {}
@@ -1334,7 +1338,8 @@ def _volume_metadata_get_item(context, volume_id, key, session=None):
     result = _volume_metadata_get_query(
         context, volume_id, session=session).filter_by(key=key).first()
     if not result:
-        exception.VolumeMetadataNotFound(id=volume_id, metadata_key=key)
+        raise exception.VolumeMetadataNotFound(volume_id=volume_id,
+                                               metadata_key=key)
     return result
 
 
@@ -1365,16 +1370,29 @@ def volume_metadata_update(context, volume_id, metadata, delete=False):
         'updated_at': literal_column('updated_at')}
     with session.begin():
         if delete:
-            volume_metadata = _volume_metadata_get(context, volume_id, session)
-            deleted_metadata = [key for key in volume_metadata not in metadata]
-            for key in deleted_metadata:
+            volume_metadata = volume_metadata_get(context, volume_id, session)
+            for key in volume_metadata:
+                if key not in metadata:
+                    metadata_ref = _volume_metadata_get_item(context,
+                                                             volume_id,
+                                                             key, session)
+                    metadata_ref.update(deleted_values)
+                    metadata_ref.save(session)
+        for key in metadata:
+            try:
                 metadata_ref = _volume_metadata_get_item(context, volume_id,
                                                          key, session)
-                metadata_ref.update(deleted_values)
-        for key in metadata:
-            metadata_ref = _volume_metadata_get_item(context, volume_id,
-                                                     key, session)
-            metadata_ref.update({'value': metadata[key]})
+                metadata_ref.update({'value': metadata[key]})
+                metadata_ref.save(session)
+            except exception.VolumeMetadataNotFound:
+                metadata_ref = models.VolumeMetadata()
+                metadata_ref.update({
+                    'volume_id': volume_id,
+                    'key': key,
+                    'value': metadata[key]})
+                metadata_ref.save(session)
+        result = volume_metadata_get(context, volume_id, session)
+    return result
 
 
 ###################

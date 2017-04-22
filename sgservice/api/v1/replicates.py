@@ -17,6 +17,7 @@ from oslo_log import log as logging
 from oslo_utils import uuidutils
 import webob
 
+from sgservice.api import common
 from sgservice.api.openstack import wsgi
 from sgservice.api.v1.volumes import VolumeViewBuilder
 from sgservice.common import constants
@@ -28,10 +29,34 @@ CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
 
+class ReplicateViewBuilder(common.ViewBuilder):
+    """Model a server API response as a python dictionary."""
+
+    _collection_name = "replicates"
+
+    def __init__(self):
+        """Initialize view builder."""
+        super(ReplicateViewBuilder, self).__init__()
+
+    def action_summary(self, request, action_info):
+        """Generic, non-detailed view of action"""
+        replicate_info = {
+            'volume_id': action_info['id'],
+            'replicate_status': action_info['replicate_status']
+        }
+
+        if 'snapshot_id' in action_info.keys():
+            replicate_info['snapshot_id'] = action_info['snapshot_id']
+        info = {
+            'replicate': replicate_info
+        }
+        return info
+
+
 class ReplicatesController(wsgi.Controller):
     """The replicates API controller for the SG-Service."""
 
-    _view_builder_class = VolumeViewBuilder
+    _view_builder_class = ReplicateViewBuilder
 
     def __init__(self):
         self.service_api = ServiceAPI()
@@ -69,9 +94,9 @@ class ReplicatesController(wsgi.Controller):
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
         volume = self.service_api.get(context, id)
-        volume = self.service_api.create_replicate(context, volume, mode,
-                                                   replication_id, peer_volume)
-        return self._view_builder.detail(req, volume)
+        replicate_info = self.service_api.create_replicate(
+            context, volume, mode, replication_id, peer_volume)
+        return self._view_builder.action_summary(req, replicate_info)
 
     @wsgi.action('enable_replicate')
     def enable_replicate(self, req, id, body):
@@ -79,8 +104,8 @@ class ReplicatesController(wsgi.Controller):
         LOG.info(_LI("Enable volume's replicate, volume_id: %s"), id)
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
-        volume = self.service_api.enable_replicate(context, volume)
-        return self._view_builder.detail(req, volume)
+        replicate_info = self.service_api.enable_replicate(context, volume)
+        return self._view_builder.action_summary(req, replicate_info)
 
     @wsgi.action('disable_replicate')
     def disable_replicate(self, req, id, body):
@@ -88,17 +113,22 @@ class ReplicatesController(wsgi.Controller):
         LOG.info(_LI("Disable volume's replicate, volume_id: %s"), id)
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
-        volume = self.service_api.disable_replicate(context, volume)
-        return self._view_builder.detail(req, volume)
+        replicate_info = self.service_api.disable_replicate(context, volume)
+        return self._view_builder.action_summary(req, replicate_info)
 
     @wsgi.action('failover_replicate')
     def failover_replicate(self, req, id, body):
         """Failover a volume's replicate"""
         LOG.info(_LI("Failover volume's replicate, volume_id: %s"), id)
         context = req.environ['sgservice.context']
+        params = body.get('failover_replicate', {})
+
+        checkpoint_id = params.get('checkpoint_id', None)
+        force = params.get('force', False)
         volume = self.service_api.get(context, id)
-        volume = self.service_api.failover_replicate(context, volume)
-        return self._view_builder.detail(req, volume)
+        replicate_info = self.service_api.failover_replicate(
+            context, volume, checkpoint_id, force)
+        return self._view_builder.action_summary(req, replicate_info)
 
     @wsgi.action('reverse_replicate')
     def reverse_replicate(self, req, id, body):
@@ -106,8 +136,8 @@ class ReplicatesController(wsgi.Controller):
         LOG.info(_LI("Reverse volume's replicate, volume_id: %s"), id)
         context = req.environ['sgservice.context']
         volume = self.service_api.get(context, id)
-        volume = self.service_api.reverse_replicate(context, volume)
-        return self._view_builder.detail(req, volume)
+        replicate_info = self.service_api.reverse_replicate(context, volume)
+        return self._view_builder.action_summary(req, replicate_info)
 
 
 def create_resource():

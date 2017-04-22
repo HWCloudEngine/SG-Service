@@ -111,8 +111,8 @@ def get_project_context_client(context):
             password=CONF.sgs_client.sgs_admin_password,
             region_name=CONF.sgs_client.region_name,
             service_type=CONF.sgs_client.service_type,
-            insecure=context.insecure,
-            cacert=context.cacert)
+            insecure=CONF.sgs_client.sgs_auth_insecure,
+            cacert=CONF.sgs_client.sgs_ca_cert_file)
         management_url = url + '/' + context.project_id
         args = {
             'username': context.user_id,

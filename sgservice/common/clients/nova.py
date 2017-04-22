@@ -122,10 +122,10 @@ def get_project_context_client(context):
             'username': context.user_id,
             'insecure': CONF.nova_client.nova_auth_insecure,
             'cacert': CONF.nova_client.nova_ca_cert_file,
-            'timeout': CONF.nova_client.timeout
+            'timeout': CONF.nova_client.timeout,
+            'auth_token': context.auth_token
         }
         client = nc.Client(CONF.nova_client.nova_version, **args)
-        client.client.auth_token = context.auth_token
         client.client.management_url = management_url
         return client
     except keystone_exception.Unauthorized:

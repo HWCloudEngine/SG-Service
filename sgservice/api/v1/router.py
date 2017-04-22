@@ -47,21 +47,18 @@ class APIRouter(wsgi_common.Router):
         mapper.resource("snapshot", "snapshots",
                         controller=snapshots_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST', 'rollback': 'POST'})
+                        member={'action': 'POST'})
 
         backups_resources = backups.create_resource()
         mapper.resource("backup", "backups",
                         controller=backups_resources,
-                        collection={'detail': 'GET'},
-                        member={'action': 'POST', 'restore': 'POST',
-                                'import_record': 'POST',
-                                'export_record': 'POST'})
+                        collection={'detail': 'GET', 'import_record': 'POST'},
+                        member={'action': 'POST'})
 
         checkpoints_resources = checkpoints.create_resource()
         mapper.resource("checkpoint", "checkpoints",
                         controller=checkpoints_resources,
                         collection={'detail': 'GET'},
-                        member={'action': 'POST', 'rollback': 'POST',
-                                'reset_status': 'POST'})
+                        member={'action': 'POST'})
 
         super(APIRouter, self).__init__(mapper)
