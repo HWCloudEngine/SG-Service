@@ -601,10 +601,10 @@ def checkpoint_get_all_by_project(context, project_id, filters=None,
                                               sort_dirs=sort_dirs)
 
 
-def checkpoint_get_all_by_replication(context, replication_id, filters=None):
+def checkpoint_get_all_by_replication(context, replication_id, filters=None,):
     """Get all checkpoints belonging to a replication."""
-    return IMPL.checkpoint_get_all_by_replication(context, replication_id,
-                                                  filters=filters)
+    return IMPL.checkpoint_get_all_by_replication(
+        context, replication_id, filters=filters)
 
 
 ###############

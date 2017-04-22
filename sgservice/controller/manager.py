@@ -80,7 +80,6 @@ BACKUP_STATUS_ACTION = {
 SNAPSHOT_STATUS_ACTION = {
     fields.SnapshotStatus.CREATING: 'create',
     fields.SnapshotStatus.DELETING: 'delete',
-    fields.SnapshotStatus.ROLLING_BACK: 'rollback'
 }
 
 REPLICATE_STATUS_ACTION = {
@@ -162,9 +161,8 @@ class ControllerManager(manager.Manager):
                                                   backup['volume_id'])
                 self.sync_backups[backup.id] = {
                     'backup': backup,
-                    'volume': volume,
-                    'action': BACKUP_STATUS_ACTION[backup.status]
-                }
+                    'action': BACKUP_STATUS_ACTION[backup.status],
+                    'volume': volume}
 
     def _init_snapshots(self, context):
         snapshots = objects.SnapshotList.get_all(context)
@@ -197,6 +195,7 @@ class ControllerManager(manager.Manager):
             volume = backup_info.get('volume')
             try:
                 driver_backup = self.driver.get_backup(backup)
+                LOG.info(_LE("Driver backup info: %s"), driver_backup)
             except exception.SGDriverError as e:
                 LOG.error(e)
                 continue
@@ -218,11 +217,23 @@ class ControllerManager(manager.Manager):
                 backup.save()
                 if action == 'restore':
                     context = backup_info['context']
-                    volume_id = backup_info['volume_id']
-                    self._detach_volume_from_sg(context, volume_id)
+                    if backup.status == fields.BackupStatus.AVAILABLE:
+                        volume.update({
+                            'status': fields.VolumeStatus.AVAILABLE})
+                    else:
+                        volume.update({
+                            'status': fields.VolumeStatus.ERROR})
+                    volume.save()
+                    if 'logicalVolumeId' in volume.metadata:
+                        logical_volume_id = volume.metadata['logicalVolumeId']
+                    else:
+                        logical_volume_id = volume.id
+                    self._detach_volume_from_sg(context, logical_volume_id)
                 if action == 'create':
                     if backup.status == fields.BackupStatus.AVAILABLE:
-                        volume.update({'status': volume.previous_status})
+                        if volume:
+                            volume.update({'status': volume.previous_status})
+                            volume.save()
                         if backup['parent_id']:
                             parent_backup = objects.Backup.get_by_id(
                                 self.admin_context,
@@ -233,8 +244,10 @@ class ControllerManager(manager.Manager):
                                 _LI('Create backup finished. backup: %s.'),
                                 backup_id)
                     else:
-                        volume.update({'status': fields.VolumeStatus.ERROR})
-                    volume.save()
+                        if volume:
+                            volume.update(
+                                {'status': fields.VolumeStatus.ERROR})
+                            volume.save()
                 self.sync_backups.pop(backup_id)
 
     def _sync_snapshots(self):
@@ -243,6 +256,7 @@ class ControllerManager(manager.Manager):
             action = snapshot_info['action']
             try:
                 driver_snapshot = self.driver.get_snapshot(snapshot)
+                LOG.info(_LI("Driver snapshot info: %s"), driver_snapshot)
             except exception.SGDriverError as e:
                 LOG.error(e)
                 continue
@@ -273,6 +287,7 @@ class ControllerManager(manager.Manager):
             volume = volume_info['volume']
             try:
                 driver_volume = self.driver.get_volume(volume)
+                LOG.info(_LE("Driver volume info: %s"), driver_volume)
             except exception.SGDriverError as e:
                 LOG.error(e)
                 continue
@@ -281,18 +296,16 @@ class ControllerManager(manager.Manager):
                 'replicate_status'] in REPLICATE_STATUS_ACTION.keys():
                 continue
             else:
-                volume.update(
-                    {'replicate_status': driver_volume['replicate_status']})
-                if driver_volume['replicate_status'] == \
-                        fields.ReplicateStatus.DELETED:
-                    volume.update({'replicate_status': None,
-                                   'replicate_mode': None,
+                replicate_status = driver_volume['replicate_status']
+                volume.update({'replicate_status': replicate_status})
+                if (replicate_status is None or
+                            replicate_status == fields.ReplicateStatus.DELETED):
+                    volume.update({'replicate_mode': None,
                                    'replication_id': None,
                                    'peer_volume': None,
                                    'access_mode': None})
                 action = volume_info['action']
-                if (driver_volume['replicate_status'] ==
-                        fields.ReplicateStatus.DISABLED
+                if (replicate_status == fields.ReplicateStatus.DISABLED
                     and action == 'reverse_replicate'):
                     if volume['replicate_mode'] == constants.REP_MASTER:
                         volume.update({'replicate_mode': constants.REP_SLAVE,
@@ -416,6 +429,61 @@ class ControllerManager(manager.Manager):
             volume.update({'status': fields.VolumeStatus.ERROR})
             volume.save()
 
+    def _delete_volume_action(self, sync_result, volume):
+        if sync_result == 'succeed':
+            try:
+                volume.destroy()
+                LOG.info('Delete sg volume succeed, '
+                         'volume_id: %s' % volume['id'])
+            except Exception:
+                LOG.error('Delete sg volume failed, '
+                          'volume_id: %s' % volume['id'])
+                volume.update({'status': fields.VolumeStatus.ERROR})
+                volume.save()
+        else:
+            LOG.error('Delete sg volume failed, volume_id: %s' % volume['id'])
+            volume.update({'status': fields.VolumeStatus.ERROR})
+            volume.save()
+
+    def delete(self, context, volume_id):
+        LOG.info(_LI("Delete sg volume with id %s"), volume_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
+
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume_id
+
+        cinder_client = cinder.get_project_context_client(context)
+        try:
+            c_volume = cinder_client.volumes.get(logical_volume_id)
+        except Exception as err:
+            if type(err) == cinder_exc.NotFound:
+                volume.destroy()
+                return
+            msg = _LE("Get volume info from cinder failed, error:%s" % err)
+            volume.update({'status': fields.VolumeStatus.ERROR})
+            volume.save()
+            raise exception.CinderClientError(reason=msg)
+
+        if c_volume.status == 'in-use':
+            try:
+                self._detach_volume_from_sg(context, logical_volume_id)
+            except Exception as err:
+                msg = _LE("Detach volume from sg-client failed, "
+                          "error:%s" % err)
+                volume.update({'status': fields.VolumeStatus.ERROR})
+                volume.save()
+                raise exception.DetachSGFailed(reason=msg)
+
+        self.sync_detach_volumes[logical_volume_id] = {
+            'cinder_client': cinder_client,
+            'action': self._delete_volume_action,
+            'action_kwargs': {
+                'volume': volume,
+            }
+        }
+
     def enable_sg(self, context, volume_id):
         LOG.info(_LI("Enable-SG for this volume with id %s"), volume_id)
         volume = objects.Volume.get_by_id(context, volume_id)
@@ -435,7 +503,7 @@ class ControllerManager(manager.Manager):
             raise exception.EnableSGFailed(reason=err)
 
         cinder_client = cinder.get_project_context_client(context)
-        self.sync_attach_volumes[volume_id] = {
+        self.sync_attach_volumes[logical_volume_id] = {
             'cinder_client': cinder_client,
             'action': self._enable_sg_action,
             'action_kwargs': {
@@ -484,7 +552,7 @@ class ControllerManager(manager.Manager):
             raise exception.DisableSGFailed(reason=err)
 
         cinder_client = cinder.get_project_context_client(context)
-        self.sync_detach_volumes[volume_id] = {
+        self.sync_detach_volumes[logical_volume_id] = {
             'cinder_client': cinder_client,
             'action': self._disable_sg_action,
             'action_kwargs': {
@@ -610,7 +678,7 @@ class ControllerManager(manager.Manager):
                  {'volume_id': volume_id, 'backup_id': backup_id})
 
         volume = objects.Volume.get_by_id(context, volume_id)
-        previous_status = volume.get('previous-status', None)
+        previous_status = volume.get('previous_status', None)
 
         expected_status = 'backing-up'
         actual_status = volume['status']
@@ -693,7 +761,7 @@ class ControllerManager(manager.Manager):
                     "action": "restore",
                     "backup": backup,
                     'context': context,
-                    'volume_id': volume.id
+                    'volume': volume
                 }
             except Exception:
                 LOG.error('restore backup failed, backup_id: %s' %
@@ -705,6 +773,8 @@ class ControllerManager(manager.Manager):
                       backup['id'])
             backup.update({'status': fields.BackupStatus.AVAILABLE})
             backup.save()
+            volume.update({'status': fields.VolumeStatus.ERROR_RESTORING})
+            volume.save()
 
     def restore_backup(self, context, backup_id, volume_id):
         LOG.info(_LI("Restore backup started, backup:%(backup_id)s, volume: "
@@ -712,6 +782,7 @@ class ControllerManager(manager.Manager):
                  {'volume_id': volume_id, 'backup_id': backup_id})
 
         backup = objects.Backup.get_by_id(context, backup_id)
+        volume = objects.Volume.get_by_id(context, volume_id)
         expected_status = 'restoring'
         actual_status = backup['status']
         if actual_status != expected_status:
@@ -722,8 +793,6 @@ class ControllerManager(manager.Manager):
             self._update_backup_error(backup)
             raise exception.InvalidBackup(reason=msg)
 
-        cinder_client = cinder.get_project_context_client(context)
-        volume = cinder_client.volumes.get(volume_id)
         if 'logicalVolumeId' in volume.metadata:
             logical_volume_id = volume.metadata['logicalVolumeId']
         else:
@@ -733,14 +802,14 @@ class ControllerManager(manager.Manager):
         except Exception as err:
             msg = (_("Restore backup failed, err: %s."), err)
             LOG.error(msg)
-            self.db.backup_update(
-                context, backup_id,
-                {'status': fields.BackupStatus.AVAILABLE})
+            backup.update({'status': fields.BackupStatus.AVAILABLE})
+            backup.save()
+            volume.update({'status': fields.BackupStatus.ERROR})
+            volume.save()
             raise exception.RestoreBackupFailed(reason=msg)
 
         cinder_client = cinder.get_project_context_client(context)
-        volume = cinder_client.volumes.get(volume_id)
-        self.sync_attach_volumes[volume_id] = {
+        self.sync_attach_volumes[logical_volume_id] = {
             'cinder_client': cinder_client,
             'action': self._restore_backup_action,
             'action_kwargs': {
@@ -754,9 +823,14 @@ class ControllerManager(manager.Manager):
     def export_record(self, context, backup_id):
         LOG.info(_LI("Export backup record started, backup:%s"), backup_id)
         backup = objects.Backup.get_by_id(context, backup_id)
+        if backup.destination == constants.REMOTE_BACKUP:
+            availability_zone = backup.replication_zone
+        else:
+            availability_zone = backup.availability_zone
         backup_record = {
             "backup_type": backup['type'],
-            "driver_data": jsonutils.loads(backup['driver_data'])
+            "driver_data": jsonutils.loads(backup['driver_data']),
+            "availability_zone": availability_zone
         }
         return backup_record
 
@@ -768,7 +842,6 @@ class ControllerManager(manager.Manager):
         driver_data = jsonutils.dumps(backup_record.get('driver_data'))
 
         backup.update({'type': backup_type,
-                       'replication_zone': CONF.replication_zone,
                        'driver_data': driver_data,
                        'status': fields.BackupStatus.AVAILABLE})
         backup.save()
@@ -976,7 +1049,8 @@ class ControllerManager(manager.Manager):
             'volume': volume
         }
 
-    def failover_replicate(self, context, volume_id, force=False):
+    def failover_replicate(self, context, volume_id, checkpoint_id=None,
+                           snapshot_id=None, force=False):
         LOG.info(_LI("Failover replicate started, volume:%s"), volume_id)
         volume = objects.Volume.get_by_id(context, volume_id)
 
@@ -993,7 +1067,9 @@ class ControllerManager(manager.Manager):
             raise exception.InvalidVolume(reason=msg)
 
         try:
-            self.driver.failover_replicate(volume=volume)
+            self.driver.failover_replicate(volume=volume,
+                                           checkpoint_id=checkpoint_id,
+                                           snapshot_id=snapshot_id)
         except exception.SGDriverError:
             with excutils.save_and_reraise_exception():
                 self.db.volume_update(
@@ -1004,6 +1080,12 @@ class ControllerManager(manager.Manager):
             'action': 'failover_replicate',
             'volume': volume
         }
+        if snapshot_id:
+            snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+            self.sync_snapshots[snapshot_id] = {
+                'action': 'create',
+                'snapshot': snapshot
+            }
 
     def reverse_replicate(self, context, volume_id):
         LOG.info(_LI("Reverse replicate started, volume:%s"), volume_id)
@@ -1035,86 +1117,99 @@ class ControllerManager(manager.Manager):
         }
 
     def _create_volume_action(self, sync_result, snapshot, mountpoint, context,
-                              volume_id):
+                              volume):
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume.id
         if sync_result == 'succeed':
             try:
                 device = self._get_attach_device(mountpoint)
-                self.driver.create_volume(snapshot, device)
-                self.sync_snapshots[snapshot['id']] = {
-                    "action": "create_volume",
-                    "snapshot": snapshot,
-                    "volume_id": volume_id,
-                    "context": context
-                }
+                self.driver.create_volume_from_snapshot(snapshot, volume.id,
+                                                        device)
             except Exception:
                 LOG.error('create volume from snapshot failed, snapshot_id: %s'
                           % snapshot['id'])
-                snapshot.update({'status': fields.SnapshotStatus.AVAILABLE})
-                snapshot.save()
+                self._detach_volume_from_sg(context, logical_volume_id)
+            retry_attempts = CONF.retry_attempts
+            while retry_attempts != 0:
+                try:
+                    driver_volume = self.driver.query_volume_from_snapshot(
+                        volume.id)
+                    LOG.info("Driver volume info: %s" % driver_volume)
+                    if driver_volume['status'] == fields.VolumeStatus.AVAILABLE:
+                        volume.update(
+                            {'status': fields.VolumeStatus.AVAILABLE})
+                        volume.save()
+                        self._detach_volume_from_sg(context, logical_volume_id)
+                        break
+                except Exception:
+                    pass
+                retry_attempts -= 1
+                greenthread.sleep(CONF.sync_status_interval)
+            if retry_attempts == 0:
+                LOG.error('create volume from snapshot failed, snapshot_id: %s'
+                          % snapshot['id'])
+                self._detach_volume_from_sg(context, logical_volume_id)
         else:
             LOG.error('create volume from snapshot failed, snapshot_id: %s' %
                       snapshot['id'])
-            snapshot.update({'status': fields.SnapshotStatus.AVAILABLE})
-            snapshot.save()
 
-    def create_volume(self, context, snapshot_id, volume_type=None,
-                      availability_zone=None, name=None, description=None):
+    def create_volume(self, context, snapshot_id, volume_id):
         LOG.info(_LI("Create new volume from snapshot, snapshot_id %s"),
                  snapshot_id)
         snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
-        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
+        volume = objects.Volume.get_by_id(context, volume_id)
 
+        if 'logicalVolumeId' in volume.metadata:
+            logical_volume_id = volume.metadata['logicalVolumeId']
+        else:
+            logical_volume_id = volume_id
         cinder_client = cinder.get_project_context_client(context)
         try:
-            cinder_volume = cinder_client.volumes.create(
-                name=name,
-                description=description,
-                volume_type=volume_type,
-                availability_zone=availability_zone,
-                size=volume['size'])
+            cinder_volume = cinder_client.volumes.get(logical_volume_id)
         except Exception as err:
-            msg = (_("Using cinder-client to create new volume failed, "
-                     "err: %s."), err)
+            msg = (_("Get the volume '%s' from cinder failed."),
+                   logical_volume_id)
             LOG.error(msg)
             raise exception.CinderClientError(reason=msg)
 
         retry = CONF.retry_attempts
-        volume_id = cinder_volume.id
         while cinder_volume.status == 'creating' and retry != 0:
             greenthread.sleep(CONF.sync_status_interval)
             try:
-                cinder_volume = cinder_client.volumes.get(volume_id)
+                cinder_volume = cinder_client.volumes.get(logical_volume_id)
             except Exception:
                 msg = (_("Get the volume '%s' from cinder failed."),
-                       volume_id)
+                       logical_volume_id)
                 LOG.error(msg)
                 raise exception.InvalidVolume(reason=msg)
             retry -= 1
         if retry == 0:
-            msg = (_("Wait new cinder volume %s to be available timeout."),
-                   volume_id)
+            msg = (_("Wait cinder volume %s to be available timeout."),
+                   logical_volume_id)
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
         if cinder_volume.status != 'available':
             msg = (_("Wait new cinder volume %s to be available failed."),
-                   volume_id)
+                   logical_volume_id)
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
 
         try:
-            mountpoint = self._attach_volume_to_sg(context, volume_id)
+            mountpoint = self._attach_volume_to_sg(context, logical_volume_id)
         except Exception as err:
             msg = (_("Attach volume to sg failed, err: %s."), err)
             LOG.error(msg)
             raise exception.AttachSGFailed(reason=msg)
 
-        self.sync_attach_volumes[volume_id] = {
+        self.sync_attach_volumes[logical_volume_id] = {
             'cinder_client': cinder_client,
             'action': self._create_volume_action,
             'action_kwargs': {
                 'snapshot': snapshot,
                 'mountpoint': mountpoint,
-                'volume_id': volume_id,
+                'volume': volume,
                 'context': context
             }
         }

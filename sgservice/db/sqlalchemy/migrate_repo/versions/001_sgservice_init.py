@@ -51,6 +51,7 @@ def define_tables(meta):
         Column('display_description', String(255)),
         Column('master_volume', String(36)),
         Column('slave_volume', String(36)),
+        Column('force', Boolean),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )
@@ -144,7 +145,7 @@ def define_tables(meta):
         Column('destination', String(64)),
         Column('availability_zone', String(255)),
         Column('replication_zone', String(255)),
-        Column('volume_id', String(36), nullable=False),
+        Column('volume_id', String(36), nullable=True),
         Column('driver_data', Text, nullable=True),
         Column('parent_id', String(36), nullable=True),
         Column('num_dependent_backups', Integer, default=0),
@@ -173,13 +174,29 @@ def define_tables(meta):
         mysql_charset='utf8'
     )
 
+    volume_metadata = Table(
+        'volume_metadata', meta,
+        Column('created_at', DateTime),
+        Column('updated_at', DateTime),
+        Column('deleted_at', DateTime),
+        Column('deleted', Boolean),
+        Column('id', Integer, primary_key=True, nullable=False),
+        Column('volume_id', String(36), ForeignKey('volumes.id'),
+               nullable=False),
+        Column('key', String(255)),
+        Column('value', String(255)),
+        mysql_engine='InnoDB',
+        mysql_charset='utf8'
+    )
+
     return [services,
             replications,
             checkpoints,
             volumes,
             snapshots,
             backups,
-            volume_attachment]
+            volume_attachment,
+            volume_metadata]
 
 
 def upgrade(migrate_engine):

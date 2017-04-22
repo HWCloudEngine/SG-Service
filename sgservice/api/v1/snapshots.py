@@ -22,6 +22,7 @@ from sgservice.api.openstack import wsgi
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
+from sgservice.objects import fields
 from sgservice import utils
 
 CONF = cfg.CONF
@@ -141,6 +142,12 @@ class SnapshotsController(wsgi.Controller):
             context, filters, self._get_snapshot_filter_options())
         utils.check_filters(filters)
 
+        if 'name' in sort_keys:
+            sort_keys[sort_keys.index('name')] = 'display_name'
+
+        if 'name' in filters:
+            filters['display_name'] = filters.pop('name')
+
         snapshots = self.service_api.get_all_snapshots(
             context, marker=marker, limit=limit, sort_keys=sort_keys,
             sort_dirs=sort_dirs, filters=filters, offset=offset)
@@ -160,26 +167,16 @@ class SnapshotsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = snapshot.get('name')
-        if name is None:
-            name = 'snapshot-%s' % volume_id
-        description = snapshot.get('description')
+        name = snapshot.get('name', None)
+        description = snapshot.get('description', None)
         if description is None:
-            description = name
+            description = 'snapshot-%s' % volume_id
         checkpoint_id = snapshot.get('checkpoint_id', None)
 
         volume = self.service_api.get(context, volume_id)
         snapshot = self.service_api.create_snapshot(
             context, name, description, volume, checkpoint_id)
         return self._view_builder.detail(req, snapshot)
-
-    def rollback(self, req, id):
-        """Rollback a snapshot to volume"""
-        LOG.info(_LI("Rollback snapshot with id: %s"), id)
-        context = req.environ['sgservice.context']
-        snapshot = self.service_api.get_snapshot(context, id)
-        rollback = self.service_api.rollback_snapshot(context, snapshot)
-        return self._view_builder.rollback_summary(req, rollback)
 
     def update(self, req, id, body):
         """Update a snapshot."""
@@ -214,8 +211,33 @@ class SnapshotsController(wsgi.Controller):
         snapshot = self.service_api.get_snapshot(context, id)
         snapshot.update(update_dict)
         snapshot.save()
-
         return self._view_builder.detail(req, snapshot)
+
+    @wsgi.action('rollback')
+    def rollback(self, req, id, body):
+        """Rollback a snapshot to volume"""
+        LOG.info(_LI("Rollback snapshot with id: %s"), id)
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+        rollback = self.service_api.rollback_snapshot(context, snapshot)
+        return self._view_builder.rollback_summary(req, rollback)
+
+    @wsgi.action('reset_status')
+    def reset_status(self, req, id, body):
+        """reset snapshot status"""
+        LOG.info(_LI("Reset snapshot status, id: %s"), id)
+        status = body['reset_status'].get('status',
+                                          fields.SnapshotStatus.AVAILABLE)
+        if status not in fields.SnapshotStatus.ALL:
+            msg = _("Invalid status provided.")
+            LOG.error(msg)
+            raise exception.InvalidStatus(status=status)
+
+        context = req.environ['sgservice.context']
+        snapshot = self.service_api.get_snapshot(context, id)
+        snapshot.status = status
+        snapshot.save()
+        return webob.Response(status_int=202)
 
 
 def create_resource():

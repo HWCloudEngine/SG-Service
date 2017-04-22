@@ -78,6 +78,7 @@ class Replication(BASE, SGServiceBase):
     display_description = Column(String(255))
     master_volume = Column(String(36))
     slave_volume = Column(String(36))
+    force = Column(Boolean, default=False)
 
     @property
     def name(self):

@@ -23,6 +23,7 @@ from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
 from sgservice.i18n import _, _LI
+from sgservice.objects import fields
 from sgservice import utils
 
 CONF = cfg.CONF
@@ -72,9 +73,10 @@ class BackupViewBuilder(common.ViewBuilder):
     def export_summary(self, request, export):
         """Generic view of an export."""
         return {
-            'backup-record': {
-                'driver_data': export['dirver_data'],
-                'backup_type': export['backup_type']
+            'backup_record': {
+                'driver_data': export['driver_data'],
+                'backup_type': export['backup_type'],
+                'availability_zone': export['availability_zone']
             },
         }
 
@@ -150,6 +152,12 @@ class BackupsController(wsgi.Controller):
             context, filters, self._get_backup_filter_options())
         utils.check_filters(filters)
 
+        if 'name' in sort_keys:
+            sort_keys[sort_keys.index('name')] = 'display_name'
+
+        if 'name' in filters:
+            filters['display_name'] = filters.pop('name')
+
         backups = self.service_api.get_all_backups(
             context, marker=marker, limit=limit, sort_keys=sort_keys,
             sort_dirs=sort_dirs, filters=filters, offset=offset)
@@ -169,12 +177,10 @@ class BackupsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = backup.get('name')
-        if name is None:
-            name = 'backup-%s' % volume_id
-        description = backup.get('description')
+        name = backup.get('name', None)
+        description = backup.get('description', None)
         if description is None:
-            description = name
+            description = 'backup-%s' % volume_id
 
         backup_type = backup.get('type')
         if backup_type is None:
@@ -231,6 +237,7 @@ class BackupsController(wsgi.Controller):
         backup.save()
         return self._view_builder.detail(req, backup)
 
+    @wsgi.action('restore')
     def restore(self, req, id, body):
         """Restore backup to an SG-enabled volume"""
         LOG.info(_LI("Restore backup to sg-enabled volume, backup_id: %s"), id)
@@ -245,7 +252,8 @@ class BackupsController(wsgi.Controller):
         restore = self.service_api.restore_backup(context, backup, volume_id)
         return self._view_builder.restore_summary(req, restore)
 
-    def export_record(self, req, id):
+    @wsgi.action('export_record')
+    def export_record(self, req, id, body):
         """Export backup record"""
         LOG.info(_LI("Export backup record, backup_id: %s"), id)
         context = req.environ['sgservice.context']
@@ -257,19 +265,19 @@ class BackupsController(wsgi.Controller):
     def import_record(self, req, body):
         """Import a backup"""
         LOG.info(_LI("Importing record from body: %s"), body)
-        self.assert_valid_body(body, 'backup-record')
-        context = req.environ['cinder.context']
-        import_data = body['backup-record']
+        self.assert_valid_body(body, 'backup_record')
+        context = req.environ['sgservice.context']
+        backup_record = body['backup_record']
         # Verify that body elements are provided
         try:
-            driver_data = import_data['driver_data']
+            driver_data = backup_record['driver_data']
         except KeyError:
             msg = _("Incorrect request body format.")
             raise webob.exc.HTTPBadRequest(explanation=msg)
         LOG.debug('Importing backup using driver_data %s.', driver_data)
 
         try:
-            new_backup = self.service_api.import_record(context, driver_data)
+            new_backup = self.service_api.import_record(context, backup_record)
         except exception.InvalidBackup as error:
             raise webob.exc.HTTPBadRequest(explanation=error.msg)
         # Other Not found exceptions will be handled at the wsgi level
@@ -278,6 +286,23 @@ class BackupsController(wsgi.Controller):
 
         retval = self._view_builder.detail(req, new_backup)
         return retval
+
+    @wsgi.action('reset_status')
+    def reset_status(self, req, id, body):
+        """reset backup status"""
+        LOG.info(_LI("Reset backup status, id: %s"), id)
+        status = body['reset_status'].get('status',
+                                          fields.BackupStatus.AVAILABLE)
+        if status not in fields.BackupStatus.ALL:
+            msg = _("Invalid status provided.")
+            LOG.error(msg)
+            raise exception.InvalidStatus(status=status)
+
+        context = req.environ['sgservice.context']
+        backup = self.service_api.get_backup(context, id)
+        backup.status = status
+        backup.save()
+        return webob.Response(status_int=202)
 
 
 def create_resource():

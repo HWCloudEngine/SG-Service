@@ -151,6 +151,12 @@ class NotFound(SGServiceException):
     safe = True
 
 
+class InnerServiceError(SGServiceException):
+    message = _("Inner sgservice error")
+    code = 500
+    safe = True
+
+
 class ConfigNotFound(NotFound):
     message = _("Could not find config at %(path)s")
 
@@ -248,39 +254,39 @@ class InvalidCheckpoint(Invalid):
     message = _("Invalid checkpoint: %(reason)s")
 
 
-class SGDriverError(SGServiceException):
+class SGDriverError(InnerServiceError):
     message = _("SG Driver Error: %(reason)s")
 
 
-class SyncVolumeFailed(SGServiceException):
+class SyncVolumeFailed(InnerServiceError):
     message = _("Sync volume status failed: %(reason)s")
 
 
-class AttachSGFailed(SGServiceException):
+class AttachSGFailed(InnerServiceError):
     message = _("Attach volume to sg-client failed: %(reason)s")
 
 
-class DetachSGFailed(SGServiceException):
+class DetachSGFailed(InnerServiceError):
     message = _("Detach volume to sg-client failed: %(reason)s")
 
 
-class RestoreBackupFailed(SGServiceException):
+class RestoreBackupFailed(InnerServiceError):
     message = _("Restore backup failed: %(reason)s")
 
 
-class CinderClientError(SGServiceException):
+class CinderClientError(InnerServiceError):
     message = _("Call to cinder client failed: %(reason)s")
 
 
-class CreateVolumeFailed(SGServiceException):
+class CreateVolumeFailed(InnerServiceError):
     message = _('Create volume from snapshot failed: %(reason)s')
 
 
-class RollbackFailed(SGServiceException):
+class RollbackFailed(InnerServiceError):
     message = _('Rollback failed: %(reason)s')
 
 
-class InvalidVolumeAttachMode(SGServiceException):
+class InvalidVolumeAttachMode(Invalid):
     message = _("Invalid attaching mode '%(mode)s' for "
                 "volume %(volume_id)s.")
 

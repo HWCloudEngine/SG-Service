@@ -132,6 +132,12 @@ class ReplicationsController(wsgi.Controller):
             context, filters, self._get_replication_filter_options())
         utils.check_filters(filters)
 
+        if 'name' in sort_keys:
+            sort_keys[sort_keys.index('name')] = 'display_name'
+
+        if 'name' in filters:
+            filters['display_name'] = filters.pop('name')
+
         replications = self.service_api.get_all_replications(
             context, marker=marker, limit=limit, sort_keys=sort_keys,
             sort_dirs=sort_dirs, filters=filters, offset=offset)
@@ -158,12 +164,11 @@ class ReplicationsController(wsgi.Controller):
             msg = _('Incorrect request body format')
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        name = replication.get('name')
-        if name is None:
-            name = 'replication-%s:%s' % (master_volume_id, slave_volume_id)
-        description = replication.get('description')
+        name = replication.get('name', None)
+        description = replication.get('description', None)
         if description is None:
-            description = name
+            description = 'replication:%s-%s' % (master_volume_id,
+                                                 slave_volume_id)
 
         master_volume = self.service_api.get(context, master_volume_id)
         slave_volume = self.service_api.get(context, slave_volume_id)
@@ -231,9 +236,12 @@ class ReplicationsController(wsgi.Controller):
         """Failover a enabled replication"""
         LOG.info(_LI("Failover replication with id: %s"), id)
         context = req.environ['sgservice.context']
+
+        params = body['failover']
+        force = params.get('force', False)
         replication = self.service_api.get_replication(context, id)
         replication = self.service_api.failover_replication(context,
-                                                            replication)
+                                                            replication, force)
         return self._view_builder.detail(req, replication)
 
     @wsgi.action('reverse')
@@ -250,7 +258,8 @@ class ReplicationsController(wsgi.Controller):
     def reset_status(self, req, id, body):
         """reset replication status"""
         LOG.info(_LI("Reset replication status, id: %s"), id)
-        status = body['reset_status'].get('status', None)
+        status = body['reset_status'].get('status',
+                                          fields.ReplicationStatus.ENABLED)
         if status not in fields.ReplicationStatus.ALL:
             msg = _("Invalid status provided.")
             LOG.error(msg)
@@ -260,6 +269,25 @@ class ReplicationsController(wsgi.Controller):
         replication = self.service_api.get_replication(context, id)
         replication.status = status
         replication.save()
+        # reset master volume replicate status
+        master_volume = self.service_api.get(context,
+                                             replication.master_volume)
+        if master_volume.replicate_status not in [
+            None,
+            fields.ReplicateStatus.DELETED
+        ]:
+            master_volume.replicate_status = status
+        master_volume.save()
+
+        # reset slave volume replicate status
+        slave_volume = self.service_api.get(context,
+                                            replication.slave_volume)
+        if slave_volume.replicate_status not in [
+            None,
+            fields.ReplicateStatus.DELETED
+        ]:
+            slave_volume.replicate_status = status
+        slave_volume.save()
         return webob.Response(status_int=202)
 
 

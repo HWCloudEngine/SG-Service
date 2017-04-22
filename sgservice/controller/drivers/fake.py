@@ -171,8 +171,14 @@ class FakeDriver(SGDriver):
     def list_snapshots(self, volume):
         pass
 
-    def create_volume(self, snapshot, device):
+    def create_volume_from_snapshot(self, snapshot, new_volume_id, device):
         pass
+
+    def query_volume_from_snapshot(self, new_volume_id):
+        return {
+            'id': new_volume_id,
+            'status': fields.VolumeStatus.AVAILABLE
+        }
 
     def create_replicate(self, volume):
         pass
@@ -183,7 +189,7 @@ class FakeDriver(SGDriver):
     def disable_replicate(self, volume):
         pass
 
-    def failover_replicate(self, volume):
+    def failover_replicate(self, volume, checkpoint_id, snapshot_id):
         pass
 
     def delete_replicate(self, volume):

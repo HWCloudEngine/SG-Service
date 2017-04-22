@@ -38,7 +38,8 @@ class Replication(base.SGServicePersistentObject, base.SGServiceObject,
         'display_name': fields.StringField(nullable=True),
         'display_description': fields.StringField(nullable=True),
         'master_volume': fields.UUIDField(nullable=True),
-        'slave_volume': fields.UUIDField(nullable=True)
+        'slave_volume': fields.UUIDField(nullable=True),
+        'force': fields.BooleanField(default=False)
     }
 
     # obj_extra_fields is used to hold properties that are not
