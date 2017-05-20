@@ -46,6 +46,8 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
         'availability_zone': fields.StringField(nullable=True),
         'replication_zone': fields.StringField(nullable=True),
         'volume_id': fields.UUIDField(nullable=True),
+        'volume_size': fields.IntegerField(nullable=True),
+        'sg_client': fields.StringField(nullable=True),
 
         'volume': fields.ObjectField('Volume', nullable=True),
     }
@@ -61,7 +63,6 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
     @property
     def volume_name(self):
         return self.volume.name
-
 
     @classmethod
     def _from_db_object(cls, context, snapshot, db_snapshot,
