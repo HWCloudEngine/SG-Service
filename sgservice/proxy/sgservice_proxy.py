@@ -24,6 +24,7 @@ from sgsclient.exceptions import NotFound
 from sgservice.i18n import _, _LI, _LE
 from sgservice.common import constants
 from sgservice.common.clients import cinder
+from sgservice.common.clients import nova
 from sgservice.common.clients import sgs
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
@@ -108,6 +109,7 @@ class SGServiceProxy(manager.Manager):
         self.service_api = ServiceAPI()
         self.adminCinderClient = self._get_cascaded_cinder_client()
         self.adminSGSClient = self._get_cascaded_sgs_client()
+        self.adminNovaClient = self._get_cascaded_nova_client()
         self.admin_context = sg_context.get_admin_context()
 
         self.volumes_mapping_cache = {}
@@ -225,6 +227,23 @@ class SGServiceProxy(manager.Manager):
                     volume.update({'status': csd_volume.status})
                     volume.save()
                     self.sync_volumes.pop(volume_id)
+                if action == 'attach':
+                    attachment = item['attachment']
+                    if volume.status == fields.VolumeStatus.IN_USE:
+                        attachment.finish_attach(
+                            csd_volume.attachments[0]['device'])
+                    else:
+                        attachment.attach_status = (
+                            fields.VolumeAttachStatus.ERROR_ATTACHING)
+                        attachment.save()
+                if action == 'detach':
+                    attachment = item['attachment']
+                    if volume.status == fields.VolumeStatus.ENABLED:
+                        volume.finish_detach(attachment.id)
+                    else:
+                        attachment.attach_status = (
+                            fields.VolumeAttachStatus.ERROR_DETACHING)
+                        attachment.save()
             except (exception.CascadedResourceNotFound, NotFound):
                 if action in ['disable', 'delete']:
                     LOG.info(_LI("disable or delete volume %s finished "),
@@ -489,6 +508,12 @@ class SGServiceProxy(manager.Manager):
         else:
             return cinder.get_project_context_client(context)
 
+    def _get_cascaded_nova_client(self, context=None):
+        if context is None:
+            return nova.get_admin_client()
+        else:
+            return nova.get_project_context_client(context)
+
     def _gen_csd_volume_name(self, csg_volume_id):
         return 'volume@%s' % csg_volume_id
 
@@ -604,90 +629,70 @@ class SGServiceProxy(manager.Manager):
                      {'volume_id': volume_id, 'err': exc})
             self._update_volume_error(volume)
 
-    def attach_volume(self, context, volume_id, instance_uuid, host_name,
-                      mountpoint, mode):
-        """cascaded attach_volume will be called in nova-proxy
-           sgservice-proxy just update cascading level data
-        """
+    def _gen_csd_instance_name(self, instance_id):
+        return 'server@%s' % instance_id
+
+    def _get_csd_instance_id(self, instance_id):
+        csd_instance_name = self._gen_csd_instance_name(instance_id)
+        search_opts = {'all_tenants': True,
+                       'name': csd_instance_name}
+        try:
+            vms = self.adminNovaClient.servers.list(
+                search_opts=search_opts, detailed=True)
+            if vms:
+                csd_instance_id = vms[0]._info['id']
+                return csd_instance_id
+            else:
+                msg = _LE("get cascaded nova instance-id of %s failed" %
+                          instance_id)
+                LOG.info(msg)
+                raise exception.CascadedResourceNotFound(reason=msg)
+        except Exception as err:
+            LOG.info(_LE("get cascaded nova instance-id of %s err"),
+                     instance_id)
+            raise err
+
+    def attach_volume(self, context, volume_id, attachment_id):
+        LOG.info(_LI("Attach volume with id: %s"), volume_id)
         volume = objects.Volume.get_by_id(context, volume_id)
-        if volume['status'] == fields.VolumeStatus.ATTACHING:
-            access_mode = volume['access_mode']
-            if access_mode is not None and access_mode != mode:
-                raise exception.InvalidVolume(
-                    reason=_('being attached by different mode'))
-
-        host_name_sanitized = utils.sanitize_hostname(
-            host_name) if host_name else None
-        if instance_uuid:
-            attachments = self.db.volume_attachment_get_all_by_instance_uuid(
-                context, volume_id, instance_uuid)
-        else:
-            attachments = self.db.volume_attachment_get_all_by_host(
-                context, volume_id, host_name_sanitized)
-        if attachments:
-            volume.update({'status': fields.VolumeStatus.IN_USE})
+        attachment = objects.VolumeAttachment.get_by_id(context, attachment_id)
+        instance_uuid = attachment.instance_uuid
+        instance_host = attachment.instance_host
+        try:
+            csd_instance_id = self._get_csd_instance_id(instance_uuid)
+            csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            csd_sgs_client.volumes.attach_volume(csd_volume_id,
+                                                 csd_instance_id,
+                                                 instance_host)
+            self.sync_volumes[volume_id] = {'action': 'attach',
+                                            'attachment': attachment}
+        except Exception:
+            attachment.attach_status = (
+                fields.VolumeAttachStatus.ERROR_ATTACHING)
+            attachment.save()
+            volume.status = volume.previous_status
             volume.save()
-            return
-
-        values = {'volume_id': volume_id,
-                  'attach_status': fields.VolumeStatus.ATTACHING}
-        attachment = self.db.volume_attach(context.elevated(), values)
-        attachment_id = attachment['id']
-
-        if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
-            self.db.volume_attachment_update(
-                context, attachment_id,
-                {'attach_status': fields.VolumeStatus.ERROR_ATTACHING})
-            raise exception.InvalidUUID(uuid=instance_uuid)
-
-        self.db.volume_attached(context.elevated(),
-                                attachment_id,
-                                instance_uuid,
-                                host_name_sanitized,
-                                mountpoint,
-                                mode)
-        LOG.info(_LI("Attach volume completed successfully."))
-        return self.db.volume_attachment_get(context, attachment_id)
 
     def detach_volume(self, context, volume_id, attachment_id):
-        """Updates db to show volume is detached
-           interface about detach_volume has been realized in nova-proxy
-           cinder-proxy just update cascading level data
-        """
         LOG.info(_LI("Detach volume with id: %s"), volume_id)
-
-        volume = self.db.volume_get(context, volume_id)
-        if attachment_id:
-            try:
-                attachment = self.db.volume_attachment_get(context,
-                                                           attachment_id)
-            except exception.VolumeAttachmentNotFound:
-                LOG.info(_LI("Volume detach called, but volume not attached"))
-                self.db.volume_detached(context, volume_id, attachment_id)
-                return
-        else:
-            attachments = self.db.volume_attachment_get_all_by_volume_id(
-                context, volume_id)
-            if len(attachments) > 1:
-                msg = _("Detach volume failed: More than one attachment, "
-                        "but no attachment_id provide.")
-                LOG.error(msg)
-                raise exception.InvalidVolume(reason=msg)
-            elif len(attachments) == 1:
-                attachment = attachments[0]
-            else:
-                LOG.info(_LI("Volume detach called, but volume not attached"))
-                self.db.volume_update(context, volume_id,
-                                      {'status': 'available'})
-                return
-
-        self.db.volume_detached(context.elevated(), volume_id,
-                                attachment.get('id'))
-        LOG.info(_LI("Detach volume completed successfully."))
-
-    def initialize_connection(self, context, volume_id, connector):
-        # just need return None
-        return None
+        volume = objects.Volume.get_by_id(context, volume_id)
+        attachment = objects.VolumeAttachment.get_by_id(context, attachment_id)
+        instance_uuid = attachment.instance_uuid
+        try:
+            csd_instance_id = self._get_csd_instance_id(instance_uuid)
+            csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
+            csd_sgs_client = self._get_cascaded_sgs_client(context)
+            csd_sgs_client.volumes.detach_volume(csd_volume_id,
+                                                 csd_instance_id)
+            self.sync_volumes[volume_id] = {'action': 'detach',
+                                            'attachment': attachment}
+        except Exception:
+            attachment.attach_status = (
+                fields.VolumeAttachStatus.ERROR_DETACHING)
+            attachment.save()
+            volume.status = volume.previous_status
+            volume.save()
 
     def _gen_csd_backup_name(self, backup_id):
         return 'backup@%s' % backup_id

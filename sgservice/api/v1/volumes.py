@@ -255,39 +255,6 @@ class VolumesController(wsgi.Controller):
         volume = self.service_api.disable_sg(context, volume)
         return self._view_builder.detail(req, volume)
 
-    @wsgi.action('reserve')
-    def reserve(self, req, id, body):
-        """Mark SG-volume as reserved before attach."""
-        LOG.info(_LI("Mark SG-volume as reserved, volume_id: %s"), id)
-        context = req.environ['sgservice.context']
-        volume = self.service_api.get(context, id)
-        self.service_api.reserve_volume(context, volume)
-        return webob.Response(status_int=202)
-
-    @wsgi.action('unreserve')
-    def unreserve(self, req, id, body):
-        """Unmark volume as reserved."""
-        LOG.info(_LI("Unmark volume as reserved, volume_id: %s"), id)
-        context = req.environ['sgservice.context']
-        volume = self.service_api.get(context, id)
-        self.service_api.unreserve_volume(context, volume)
-        return webob.Response(status_int=202)
-
-    @wsgi.action('initialize_connection')
-    def initialize_connection(self, req, id, body):
-        """Initialize volume attachment."""
-        LOG.info(_LI("Initialize volume attachment, volume_id: %s"), id)
-        context = req.environ['sgservice.context']
-        volume = self.service_api.get(context, id)
-
-        params = body['initialize_connection']
-        params = {} if params is None else params
-        connector = params.get('connector', None)
-
-        info = self.service_api.initialize_connection(
-            context, volume, connector)
-        return {"connection_info": info}
-
     @wsgi.action('attach')
     def attach(self, req, id, body):
         """Add sg-volume attachment metadata."""
@@ -298,13 +265,12 @@ class VolumesController(wsgi.Controller):
         params = body['attach']
         params = {} if params is None else params
         instance_uuid = params.get('instance_uuid', None)
-        host_name = params.get('host_name', None)
-        mountpoint = params.get('mountpoint', None)
+        instance_ip = params.get('instance_ip', None)
 
         mode = params.get('mode', None)
         if mode is None:
             mode = 'rw'
-        if instance_uuid is None and host_name is None:
+        if instance_uuid is None or instance_ip is None:
             msg = _("Invalid request to attach volume to an invalid target")
             raise webob.exc.HTTPBadRequest(explanation=msg)
         if mode not in ('rw', 'ro'):
@@ -312,28 +278,8 @@ class VolumesController(wsgi.Controller):
                     "Attaching mode should be 'rw' or 'ro'.")
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        self.service_api.attach(context, volume, instance_uuid, host_name,
-                                mountpoint, mode)
-        return webob.Response(status_int=202)
-
-    @wsgi.action('begin_detaching')
-    def begin_detaching(self, req, id, body):
-        """Update volume status to 'detaching'."""
-        LOG.info(_LI("Update volume status to detaching, volume_id: %s"),
-                 id)
-        context = req.environ['sgservice.context']
-        volume = self.service_api.get(context, id)
-        self.service_api.begin_detaching(context, volume)
-        return webob.Response(status_int=202)
-
-    @wsgi.action('roll_detaching')
-    def roll_detaching(self, req, id, body):
-        """Roll back volume status to 'in-use'."""
-        LOG.info(_LI("Roll back volume status to in-use, volume_id: %s"),
-                 id)
-        context = req.environ['sgservice.context']
-        volume = self.service_api.get(context, id)
-        self.service_api.roll_detaching(context, volume)
+        self.service_api.attach(context, volume, instance_uuid, instance_ip,
+                                mode)
         return webob.Response(status_int=202)
 
     @wsgi.action('detach')
@@ -345,8 +291,8 @@ class VolumesController(wsgi.Controller):
         volume = self.service_api.get(context, id)
         params = body['detach']
         params = {} if params is None else params
-        attachment_id = params.get('attachment_id', None)
-        self.service_api.detach(context, volume, attachment_id)
+        instance_uuid = params.get('instance_uuid', None)
+        self.service_api.detach(context, volume, instance_uuid)
         return webob.Response(status_int=202)
 
     @wsgi.action('reset_status')

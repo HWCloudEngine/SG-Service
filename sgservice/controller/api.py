@@ -23,6 +23,7 @@ import webob.exc
 
 from sgservice.common import constants
 from sgservice.common.clients import cinder
+from sgservice.common.clients import nova
 from sgservice import context as sg_context
 from sgservice.controller import rpcapi as controller_rpcapi
 from sgservice.db import base
@@ -326,29 +327,69 @@ class API(base.Base):
         volume.save()
         LOG.info(_LI("Roll detaching of volume completed successfully."))
 
-    def attach(self, context, volume, instance_uuid, host_name, mountpoint,
-               mode):
+    def attach(self, context, volume, instance_uuid, instance_host, mode):
+        attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
+            context, volume.id, instance_uuid)
+        if len(attachments) == 1 and attachments[0].status not in [
+            fields.VolumeAttachStatus.ERROR_ATTACHING,
+            fields.VolumeAttachStatus.ERROR_DETACHING]:
+            msg = (_LE("Volume:%(volume_id)s is already attached to "
+                       "instance:%(instance_id)s"),
+                   {"volume_id": volume.id, "instance_id": instance_uuid})
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
         access_mode = volume['access_mode']
         if access_mode is not None and access_mode != mode:
             LOG.error(_('being attached by different mode'))
             raise exception.InvalidVolumeAttachMode(mode=mode,
                                                     volume_id=volume.id)
 
-        attach_results = self.controller_rpcapi.attach_volume(context,
-                                                              volume,
-                                                              instance_uuid,
-                                                              host_name,
-                                                              mountpoint,
-                                                              mode)
-        LOG.info(_LI("Attach volume completed successfully."))
-        return attach_results
+        if volume['status'] != fields.VolumeStatus.ENABLED:
+            msg = _LE('volume to be attach must be enabled')
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
 
-    def detach(self, context, volume, attachment_id):
-        detach_results = self.controller_rpcapi.detach_volume(context,
-                                                              volume,
-                                                              attachment_id)
-        LOG.info(_LI("Detach volume completed successfully."))
-        return detach_results
+        nova_client = nova.get_project_context_client(context)
+        instance = nova_client.servers.get(instance_uuid)
+        if instance.status != 'ACTIVE':
+            msg = _LE("instance:%s to attach volume must be active" %
+                      instance_uuid)
+            LOG.error(msg)
+            raise exception.InvalidInstance(reason=msg)
+        instance_name = instance.name
+        if "server@" in instance_name:
+            logical_instance_id = instance_name.split('@')[1]
+        else:
+            logical_instance_id = instance_uuid
+
+        volume.update({'status': fields.VolumeStatus.ATTACHING,
+                       'previous_status': volume.status})
+        volume.save()
+        if len(attachments) == 0:
+            attachment = volume.begin_attach(instance_uuid, instance_host,
+                                             mode, logical_instance_id)
+        else:
+            attachment = attachments[0]
+            attachment.update(
+                {'attach_mode': mode,
+                 'attach_status': fields.VolumeAttachStatus.ATTACHING})
+            attachment.save()
+        self.controller_rpcapi.attach_volume(context, volume, attachment)
+        return attachment
+
+    def detach(self, context, volume, instance_uuid):
+        attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
+            context, volume.id, instance_uuid)
+        if len(attachments) == 0:
+            msg = (_LE("Volume:%(volume_id)s is not attached to "
+                       "instance:%(instance_id)s"),
+                   {"volume_id": volume.id, "instance_id": instance_uuid})
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
+
+        volume.update({'status': fields.VolumeStatus.DETACHING})
+        volume.save()
+        self.controller_rpcapi.detach_volume(context, volume, attachments[0])
 
     def initialize_connection(self, context, volume, connector):
         init_results = self.controller_rpcapi.initialize_connection(context,
@@ -729,7 +770,7 @@ class API(base.Base):
             if availability_zone is None:
                 availability_zone = master_snapshot['availability_zone']
             if (availability_zone != master_snapshot['availability_zone'] and
-                    availability_zone != slave_snapshot[
+                        availability_zone != slave_snapshot[
                         'availability_zone']):
                 msg = _("Invalid availability-zone")
                 LOG.error(msg)
@@ -763,7 +804,7 @@ class API(base.Base):
             cinder_volume = cinder_client.volumes.get(volume_id)
 
         if (cinder_volume.metadata
-                and 'logicalVolumeId' in cinder_volume.metadata):
+            and 'logicalVolumeId' in cinder_volume.metadata):
             metadata = {
                 'logicalVolumeId': cinder_volume.metadata['logicalVolumeId']}
         else:
