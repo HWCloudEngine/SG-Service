@@ -56,17 +56,15 @@ class ControllerAPI(object):
         return cctxt.cast(ctxt, 'disable_sg', volume_id=volume.id,
                           cascade=cascade)
 
-    def attach_volume(self, ctxt, volume, instance_uuid, host_name,
-                      mountpoint, mode):
+    def attach_volume(self, ctxt, volume, attachment):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
-        return cctxt.call(ctxt, 'attach_volume', volume_id=volume.id,
-                          instance_uuid=instance_uuid, host_name=host_name,
-                          mountpoint=mountpoint, mode=mode)
+        return cctxt.cast(ctxt, 'attach_volume', volume_id=volume.id,
+                          attachment_id=attachment.id)
 
-    def detach_volume(self, ctxt, volume, attachment_id):
+    def detach_volume(self, ctxt, volume, attachment):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
         return cctxt.call(ctxt, 'detach_volume', volume_id=volume.id,
-                          attachment_id=attachment_id)
+                          attachment_id=attachment.id)
 
     def initialize_connection(self, ctxt, volume, connector):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')

@@ -226,6 +226,10 @@ class InvalidVolume(Invalid):
     message = _("Invalid volume: %(reason)s")
 
 
+class InvalidInstance(Invalid):
+    message = _("Invalid instance: %(reason)s")
+
+
 class InvalidParameterValue(Invalid):
     message = _("%(err)s")
 

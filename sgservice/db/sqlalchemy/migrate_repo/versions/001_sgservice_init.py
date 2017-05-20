@@ -99,8 +99,9 @@ def define_tables(meta):
         Column('replicate_status', String(64)),
         Column('replicate_mode', String(64)),
         Column('access_mode', String(64)),
-        Column('driver_data', Text),
+        Column('driver_data', Text, nullable=True),
         Column('snapshot_id', String(36), nullable=True),
+        Column('sg_client', Text, nullable=True),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )
@@ -124,6 +125,8 @@ def define_tables(meta):
         Column('replication_zone', String(255)),
         Column('volume_id', String(36), ForeignKey('volumes.id'),
                nullable=False),
+        Column('volume_size', Integer, nullable=True),
+        Column('sg_client', Text, nullable=True),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )
@@ -152,6 +155,7 @@ def define_tables(meta):
         Column('num_dependent_backups', Integer, default=0),
         Column('data_timestamp', DateTime),
         Column('restore_volume_id', String(36), nullable=True),
+        Column('sg_client', Text, nullable=True),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )
@@ -166,12 +170,14 @@ def define_tables(meta):
         Column('volume_id', String(36), ForeignKey('volumes.id'),
                nullable=False),
         Column('instance_uuid', String(36)),
-        Column('attached_host', String(255)),
+        Column('instance_host', String(255)),
         Column('mountpoint', String(255)),
         Column('attach_time', DateTime),
         Column('detach_time', DateTime),
         Column('attach_status', String(255)),
         Column('attach_mode', String(36)),
+        Column('logical_instance_id', String(36)),
+
         mysql_engine='InnoDB',
         mysql_charset='utf8'
     )
