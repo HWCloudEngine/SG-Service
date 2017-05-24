@@ -54,6 +54,16 @@ class VolumeViewBuilder(common.ViewBuilder):
                                 'device': attachment.mountpoint})
         return attachments
 
+    def attach_summary(self, request, attach):
+        """Generic, non-detailed view of restore"""
+        return {
+            'attach': {
+                'instance_id': attach['instance_uuid'],
+                'volume_id': attach['volume_id'],
+                'device': attach['mountpoint']
+            }
+        }
+
     def detail(self, request, volume):
         """Detailed view of a single volume."""
         volume_ref = {
@@ -289,9 +299,9 @@ class VolumesController(wsgi.Controller):
                     "Attaching mode should be 'rw' or 'ro'.")
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
-        self.service_api.attach(context, volume, instance_uuid, instance_ip,
-                                mode)
-        return webob.Response(status_int=202)
+        attach_result = self.service_api.attach(context, volume, instance_uuid,
+                                                instance_ip, mode)
+        return self._view_builder.attach_summary(req, attach_result)
 
     @wsgi.action('detach')
     def detach(self, req, id, body):

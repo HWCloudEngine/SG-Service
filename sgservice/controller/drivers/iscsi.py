@@ -15,12 +15,11 @@
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
-from oslo_utils import uuidutils
 
 from sgservice.common import constants
 from sgservice.controller.sgdriver import SGDriver
 from sgservice import exception
-from sgservice.i18n import _, _LE, _LI
+from sgservice.i18n import _, _LE
 from sgservice.objects import fields
 
 from sg_control.backup_ctrl import BackupCtrl
@@ -79,6 +78,16 @@ REPLICATE_STATUS_MAPPING = {
 REPLICATE_ROLE_MAPPING = {
     constants.REP_MASTER: replicate_pb2.REP_PRIMARY,
     constants.REP_SLAVE: replicate_pb2.REP_SECONDARY
+}
+
+ROLE_REPLICATE_MAPPING = {
+    replicate_pb2.REP_PRIMARY: constants.REP_MASTER,
+    replicate_pb2.REP_SECONDARY: constants.REP_SLAVE
+}
+
+CLIENT_MODE_MAPPING = {
+    constants.AGENT_MODE: common_pb2.AGENT_MODE,
+    constants.ISCSI_MODE: common_pb2.ISCSI_MODE
 }
 
 GB_SIZE = 1024 * 1024 * 1024
@@ -151,29 +160,30 @@ class ISCSIDriver(SGDriver):
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            if res.status == common_pb2.sVolumeNotExist:
-                volume = {'id': volume.id,
-                          'status': fields.VolumeStatus.DELETED,
-                          'replicate_status': fields.ReplicateStatus.DELETED}
-                return volume
+            volume = {'id': volume.id,
+                      'status': fields.VolumeStatus.DELETED,
+                      'replicate_status': fields.ReplicateStatus.DELETED}
+            return volume
 
-            msg = _LE('get volume failed, err_no: %s' % res.status)
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
         status = VOLUME_STATUS_MAPPING[res.volume.vol_status]
         replicate_status = REPLICATE_STATUS_MAPPING[res.volume.rep_status]
 
-        volume = {'id': volume.id,
-                  'status': status,
-                  'replicate_status': replicate_status}
+        volume = {
+            'id': volume.id,
+            'status': status,
+            'replicate_status': replicate_status,
+            'replicate_mode': ROLE_REPLICATE_MAPPING.get(res.volume.role,
+                                                         None)}
         return volume
 
     def list_volumes(self):
         pass
 
-    def initialize_connection(self, sg_client, volume):
+    def initialize_connection(self, sg_client, volume, mode):
+        mode = CLIENT_MODE_MAPPING.get(mode, common_pb2.ISCSI_MODE)
         try:
-            res = self.volume_ctrl(sg_client).InitializeConnection(volume.id)
+            res = self.volume_ctrl(sg_client).InitializeConnection(
+                volume.id, mode)
         except Exception as exc:
             msg = _LE('initialize connection failed, err:%s' % exc)
             LOG.error(msg)
@@ -193,9 +203,11 @@ class ISCSIDriver(SGDriver):
         }
         return connection_info
 
-    def terminate_connection(self, sg_client, volume):
+    def terminate_connection(self, sg_client, volume, mode, device=None):
+        mode = CLIENT_MODE_MAPPING.get(mode, common_pb2.ISCSI_MODE)
         try:
-            res = self.volume_ctrl(sg_client).TerminateConnection(volume.id)
+            res = self.volume_ctrl(sg_client).TerminateConnection(
+                volume.id, mode, device)
         except Exception as exc:
             msg = _LE('terminate connection failed, err:%s' % exc)
             LOG.error(msg)
@@ -216,6 +228,19 @@ class ISCSIDriver(SGDriver):
 
         if res.status != 0:
             msg = _LE('attach volume failed, err_no:%s' % res.status)
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def detach_volume(self, sg_client, volume):
+        try:
+            res = self.volume_ctrl(sg_client).DetachVolume(volume.id)
+        except Exception as exc:
+            msg = _LE('detach volume failed, err:%s' % exc)
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+        if res.status != 0:
+            msg = _LE('detach volume failed, err_no:%s' % res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -262,6 +287,8 @@ class ISCSIDriver(SGDriver):
         vol_id = driver_data['volume_id']
         vol_size = backup['size']
         backup_id = driver_data['backup_id']
+        # backup_type: local, remote
+        backup_type = backup['destination']
         # new volume id
         new_vol_id = restore_volume.id
         new_vol_size = restore_volume.size * GB_SIZE
@@ -269,7 +296,7 @@ class ISCSIDriver(SGDriver):
 
         try:
             res = self.backup_ctrl(sg_client).RestoreBackup(
-                backup_id, vol_id, vol_size, new_vol_id,
+                backup_id, backup_type, vol_id, vol_size, new_vol_id,
                 new_vol_size, new_device)
         except Exception as exc:
             msg = _LE('restore backup failed, err: %s' % exc)
@@ -455,7 +482,8 @@ class ISCSIDriver(SGDriver):
         vol_id = volume.id
         role = REPLICATE_ROLE_MAPPING[volume.replicate_mode]
         try:
-            res = self.replicate_ctrl(sg_client).EnableReplication(vol_id, role)
+            res = self.replicate_ctrl(sg_client).EnableReplication(vol_id,
+                                                                   role)
         except Exception as exc:
             msg = _LE('enable replicate failed, err: %s' % exc)
             LOG.error(msg)
@@ -482,12 +510,13 @@ class ISCSIDriver(SGDriver):
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
-    def failover_replicate(self, sg_client, volume, checkpoint_id, snapshot_id):
+    def failover_replicate(self, sg_client, volume, checkpoint_id,
+                           snapshot_id):
         vol_id = volume.id
         role = REPLICATE_ROLE_MAPPING[volume.replicate_mode]
         try:
             res = self.replicate_ctrl(sg_client).FailoverReplication(
-                vol_id, role, checkpoint_id=checkpoint_id, 
+                vol_id, role, checkpoint_id=checkpoint_id,
                 snapshot_id=snapshot_id)
         except Exception as exc:
             msg = _LE('failover replicate failed, err: %s' % exc)
@@ -503,7 +532,8 @@ class ISCSIDriver(SGDriver):
         vol_id = volume.id
         role = REPLICATE_ROLE_MAPPING[volume.replicate_mode]
         try:
-            res = self.replicate_ctrl(sg_client).DeleteReplication(vol_id, role)
+            res = self.replicate_ctrl(sg_client).DeleteReplication(vol_id,
+                                                                   role)
         except Exception as exc:
             msg = _LE('delete replicate failed, err: %s' % exc)
             LOG.error(msg)

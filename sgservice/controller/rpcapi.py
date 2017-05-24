@@ -63,13 +63,8 @@ class ControllerAPI(object):
 
     def detach_volume(self, ctxt, volume, attachment):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')
-        return cctxt.call(ctxt, 'detach_volume', volume_id=volume.id,
+        return cctxt.cast(ctxt, 'detach_volume', volume_id=volume.id,
                           attachment_id=attachment.id)
-
-    def initialize_connection(self, ctxt, volume, connector):
-        cctxt = self.client.prepare(server=volume['host'], version='1.0')
-        return cctxt.call(ctxt, 'initialize_connection', volume_id=volume.id,
-                          connector=connector)
 
     def create_backup(self, ctxt, backup):
         cctxt = self.client.prepare(server=backup['host'], version='1.0')
@@ -95,17 +90,20 @@ class ControllerAPI(object):
 
     def create_snapshot(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.call(ctxt, 'create_snapshot', snapshot_id=snapshot.id,
-                          volume_id=volume.id)
+        rpc_call = cctxt.call if snapshot.checkpoint_id else cctxt.cast
+        return rpc_call(ctxt, 'create_snapshot', snapshot_id=snapshot.id,
+                        volume_id=volume.id)
 
     def delete_snapshot(self, ctxt, snapshot):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.call(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
+        rpc_call = cctxt.call if snapshot.checkpoint_id else cctxt.cast
+        return rpc_call(ctxt, 'delete_snapshot', snapshot_id=snapshot.id)
 
     def rollback_snapshot(self, ctxt, snapshot, volume):
         cctxt = self.client.prepare(server=snapshot['host'], version='1.0')
-        return cctxt.call(ctxt, 'rollback_snapshot', snapshot_id=snapshot.id,
-                          volume_id=volume.id)
+        rpc_call = cctxt.call if snapshot.checkpoint_id else cctxt.cast
+        return rpc_call(ctxt, 'rollback_snapshot', snapshot_id=snapshot.id,
+                        volume_id=volume.id)
 
     def create_replicate(self, ctxt, volume):
         cctxt = self.client.prepare(server=volume['host'], version='1.0')

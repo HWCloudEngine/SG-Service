@@ -85,7 +85,7 @@ class VolumeController(wsgi.Application):
         target_iqn = connection_properties['target_iqn']
         target_lun = connection_properties['target_lun']
         try:
-            self._connector.connection_volume(connection_properties)
+            self._connector.connect_volume(connection_properties)
         except Exception:
             msg = _("connection iscsi volume failed")
             LOG.debug(msg)

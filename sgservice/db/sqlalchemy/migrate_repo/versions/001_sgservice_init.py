@@ -125,7 +125,7 @@ def define_tables(meta):
         Column('replication_zone', String(255)),
         Column('volume_id', String(36), ForeignKey('volumes.id'),
                nullable=False),
-        Column('volume_size', Integer, nullable=True),
+        Column('volume_size', Integer),
         Column('sg_client', Text, nullable=True),
         mysql_engine='InnoDB',
         mysql_charset='utf8'
