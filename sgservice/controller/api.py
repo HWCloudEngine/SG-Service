@@ -202,7 +202,7 @@ class API(base.Base):
     def disable_sg(self, context, volume, cascade=False):
         if volume.status != fields.VolumeStatus.ENABLED:
             msg = (_('Volume %(vol_id)s to be disabled-sg status must be'
-                     'enabled, but current status is %(status)s.')
+                     ' enabled, but current status is %(status)s.')
                    % {'vol_id': volume.id,
                       'status': volume.status})
             raise exception.InvalidVolume(reason=msg)
@@ -274,70 +274,15 @@ class API(base.Base):
         LOG.info(_LI("Get all volumes completed successfully."))
         return volumes
 
-    def reserve_volume(self, context, volume):
-        if volume.status != fields.VolumeStatus.ENABLED:
-            msg = (_('Volume %(vol_id)s to be reserved status must be'
-                     'enabled, but current status is %(status)s.')
-                   % {'vol_id': volume.id,
-                      'status': volume.status})
-            raise exception.InvalidVolume(reason=msg)
-        volume.update({'status': fields.VolumeStatus.ATTACHING})
-        volume.save()
-        LOG.info(_LI("Reserve volume completed successfully."))
-
-    def unreserve_volume(self, context, volume):
-        expected_status = fields.VolumeStatus.ATTACHING
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Unreserve volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.ENABLED})
-        volume.save()
-        LOG.info(_LI("Unreserve volume completed successfully."))
-
-    def begin_detaching(self, context, volume):
-        expected_status = fields.VolumeStatus.IN_USE
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Begin detaching volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.DETACHING})
-        volume.save()
-        LOG.info(_LI("Begin detaching volume completed successfully."))
-
-    def roll_detaching(self, context, volume):
-        expected_status = fields.VolumeStatus.DETACHING
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Roll detaching volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.IN_USE})
-        volume.save()
-        LOG.info(_LI("Roll detaching of volume completed successfully."))
-
     def attach(self, context, volume, instance_uuid, instance_host, mode):
         attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
             context, volume.id, instance_uuid)
-        if len(attachments) == 1 and attachments[0].status not in [
-            fields.VolumeAttachStatus.ERROR_ATTACHING,
-            fields.VolumeAttachStatus.ERROR_DETACHING]:
+        if len(attachments) == 1:
             msg = (_LE("Volume:%(volume_id)s is already attached to "
                        "instance:%(instance_id)s"),
                    {"volume_id": volume.id, "instance_id": instance_uuid})
-            LOG.error(msg)
-            raise exception.InvalidVolume(reason=msg)
+            LOG.info(msg)
+            return
         access_mode = volume['access_mode']
         if access_mode is not None and access_mode != mode:
             LOG.error(_('being attached by different mode'))
@@ -384,8 +329,8 @@ class API(base.Base):
             msg = (_LE("Volume:%(volume_id)s is not attached to "
                        "instance:%(instance_id)s"),
                    {"volume_id": volume.id, "instance_id": instance_uuid})
-            LOG.error(msg)
-            raise exception.InvalidVolume(reason=msg)
+            LOG.info(msg)
+            return
 
         volume.update({'status': fields.VolumeStatus.DETACHING})
         volume.save()

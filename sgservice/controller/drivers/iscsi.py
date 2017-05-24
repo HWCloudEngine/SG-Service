@@ -151,15 +151,11 @@ class ISCSIDriver(SGDriver):
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            if res.status == common_pb2.sVolumeNotExist:
-                volume = {'id': volume.id,
-                          'status': fields.VolumeStatus.DELETED,
-                          'replicate_status': fields.ReplicateStatus.DELETED}
-                return volume
+            volume = {'id': volume.id,
+                      'status': fields.VolumeStatus.DELETED,
+                      'replicate_status': fields.ReplicateStatus.DELETED}
+            return volume
 
-            msg = _LE('get volume failed, err_no: %s' % res.status)
-            LOG.error(msg)
-            raise exception.SGDriverError(reason=msg)
         status = VOLUME_STATUS_MAPPING[res.volume.vol_status]
         replicate_status = REPLICATE_STATUS_MAPPING[res.volume.rep_status]
 
@@ -216,6 +212,19 @@ class ISCSIDriver(SGDriver):
 
         if res.status != 0:
             msg = _LE('attach volume failed, err_no:%s' % res.status)
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+    def detach_volume(self, sg_client, volume):
+        try:
+            res = self.volume_ctrl(sg_client).DetachVolume(volume.id)
+        except Exception as exc:
+            msg = _LE('detach volume failed, err:%s' % exc)
+            LOG.error(msg)
+            raise exception.SGDriverError(reason=msg)
+
+        if res.status != 0:
+            msg = _LE('detach volume failed, err_no:%s' % res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 

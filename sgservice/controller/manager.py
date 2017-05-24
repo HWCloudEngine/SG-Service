@@ -221,7 +221,7 @@ class ControllerManager(manager.Manager):
                 and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
                 if cinder_volume.status == 'in-use':
-                    driver_volume = self.driver.get(volume)
+                    driver_volume = self.driver.get_volume(sg_client, volume)
                     LOG.info(_LI('driver_volume info:%s'), driver_volume)
                     if driver_volume['status'] != fields.VolumeStatus.DELETED:
                         self.driver.disable_sg(sg_client, volume)
@@ -443,8 +443,9 @@ class ControllerManager(manager.Manager):
             if backup.status not in BACKUP_STATUS_ACTION.keys():
                 self.sync_backups.pop(backup_id)
                 continue
+            sg_client = SGClientObject(backup.sg_client)
             try:
-                driver_backup = self.driver.get_backup(backup)
+                driver_backup = self.driver.get_backup(sg_client, backup)
                 LOG.info(_LE("Driver backup info: %s"), driver_backup)
             except exception.SGDriverError as e:
                 LOG.error(e)
@@ -480,9 +481,9 @@ class ControllerManager(manager.Manager):
             if snapshot.status not in SNAPSHOT_STATUS_ACTION.keys():
                 self.sync_snapshots.pop(snapshot_id)
                 continue
-
+            sg_client = SGClientObject(snapshot.sg_client)
             try:
-                driver_snapshot = self.driver.get_snapshot(snapshot)
+                driver_snapshot = self.driver.get_snapshot(sg_client, snapshot)
                 LOG.info(_LI("Driver snapshot info: %s"), driver_snapshot)
             except exception.SGDriverError as e:
                 LOG.error(e)
@@ -524,8 +525,9 @@ class ControllerManager(manager.Manager):
             if volume.replicate_status not in REPLICATE_STATUS_ACTION.keys():
                 self.sync_replicates.pop(volume_id)
                 continue
+            sg_client = SGClientObject(volume.sg_client)
             try:
-                driver_volume = self.driver.get_volume(volume)
+                driver_volume = self.driver.get_volume(sg_client, volume)
                 LOG.info(_LI("Driver volume info: %s"), driver_volume)
             except exception.SGDriverError as e:
                 LOG.error(e)
@@ -600,7 +602,6 @@ class ControllerManager(manager.Manager):
     def _sync_vols_from_snap(self):
         for volume_id, volume_info in self.sync_vols_from_snap.items():
             volume = volume_info['volume']
-            snapshot = volume_info['snapshot']
             context = volume_info['context']
             sg_client = SGClientObject(volume.sg_client)
             try:
@@ -690,11 +691,13 @@ class ControllerManager(manager.Manager):
             if volume.sg_client is not None:
                 sg_client = SGClientObject(volume.sg_client)
                 cinder_client = self._create_cinder_client(context)
-                driver_volume = self.driver.get(sg_client, volume)
+                driver_volume = self.driver.get_volume(sg_client, volume)
                 if driver_volume['status'] != fields.VolumeStatus.DELETED:
                     self.driver.disable_sg(sg_client, volume)
-                self._detach_volume_from_sg(context, logical_volume_id,
-                                            sg_client)
+                cinder_volume = cinder_client.volumes.get(logical_volume_id)
+                if cinder_volume.status == 'in-use':
+                    self._detach_volume_from_sg(context, logical_volume_id,
+                                                sg_client)
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
                 if cinder_volume.status != 'available':
@@ -783,18 +786,20 @@ class ControllerManager(manager.Manager):
                                                                 volume)
         except Exception as err:
             LOG.error(_LE("attach iscsi mode volume failed, err:%s"), err)
-            self._finish_attach_volume(SYNC_FAILED, volume, attachment)
+            self._finish_attach_volume(SYNC_FAILED, volume, attachment,
+                                       fields.VolumeStatus.ENABLED)
             return
         # use iscsi agent attach volume
         try:
             instance_host = attachment.instance_host
-            sgs_agent = AgentClient(instance_host, CONF.sgs_aggent_port)
+            sgs_agent = AgentClient(instance_host, CONF.sgs_agent_port)
             mountpoint = sgs_agent.connect_volume(connection_info)['mountpoint']
         except Exception as err:
             LOG.error(_LE("attach iscsi mode volume failed, err:%s"), err)
             # terminate connection rollback attach
             self.driver.terminate_connection(sg_client, volume)
-            self._finish_attach_volume(SYNC_FAILED, volume, attachment)
+            self._finish_attach_volume(SYNC_FAILED, volume, attachment,
+                                       fields.VolumeStatus.ENABLED)
             return
 
         driver_data = {'driver_type': 'iscsi',
@@ -852,8 +857,10 @@ class ControllerManager(manager.Manager):
                               mountpoint=None,
                               status=fields.VolumeStatus.ERROR):
         if sync_result == SYNC_SUCCEED:
+            LOG.info(_LI("attach volume:%s succeed"), volume.id)
             attachment.finish_attach(mountpoint)
         else:
+            LOG.info(_LI("attach volume:%s failed"), volume.id)
             attachment.destroy()
             status = status if status else volume.previous_status
             volume.status = status
@@ -880,7 +887,7 @@ class ControllerManager(manager.Manager):
         connection_info = driver_data['connection_info']
         instance_host = attachment.instance_host
         try:
-            sgs_agent = AgentClient(instance_host, CONF.sgs_aggent_port)
+            sgs_agent = AgentClient(instance_host, CONF.sgs_agent_port)
             sgs_agent.disconnect_volume(connection_info)
             self._finish_detach_volume(SYNC_SUCCEED, volume, attachment)
         except Exception:
@@ -1110,7 +1117,7 @@ class ControllerManager(manager.Manager):
             if driver_backup['status'] == fields.BackupStatus.DELETED:
                 self._finish_delete_backup(SYNC_SUCCEED, backup)
                 return
-            self.driver.delete_backup(backup=backup)
+            self.driver.delete_backup(sg_client, backup=backup)
             self.sync_backups[backup_id] = {
                 'action': 'delete',
                 'backup': backup
@@ -1669,12 +1676,16 @@ class ControllerManager(manager.Manager):
         cinder_volume = cinder_client.volumes.get(volume_id)
         if 'error' not in cinder_volume.status:
             if cinder_volume.status != status:
+                LOG.info(_LI("Volume status is %s"), cinder_volume.status)
                 raise Exception("Volume status is not %s" % status)
         return cinder_volume
 
     @retry(wait_fixed=CONF.sync_status_interval)
     def _wait_vols_from_snap(self, volume):
-        driver_volume = self.driver.query_volume_from_snapshot(volume.id)
+        sg_client = SGClientObject(volume.sg_client)
+        driver_volume = self.driver.query_volume_from_snapshot(sg_client,
+                                                               volume.id)
         if driver_volume['status'] != fields.VolumeStatus.ENABLED:
+            LOG.info(_LI("Volume status is %s"), driver_volume['status'])
             raise Exception("Volume is creating")
         return driver_volume

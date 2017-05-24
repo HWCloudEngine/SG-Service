@@ -222,11 +222,12 @@ class SGServiceProxy(manager.Manager):
                 csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
                 csd_volume = self.adminSGSClient.volumes.get(csd_volume_id)
                 LOG.info(_LI('csd volume info: %s'), csd_volume)
-                if (csd_volume.status
-                    not in VOLUME_STATUS_ACTION_MAPPING.keys()):
-                    volume.update({'status': csd_volume.status})
-                    volume.save()
-                    self.sync_volumes.pop(volume_id)
+                if csd_volume.status in VOLUME_STATUS_ACTION_MAPPING.keys():
+                    continue
+                volume.update({
+                    'status': csd_volume.status,
+                    'replication_zone': csd_volume.replication_zone})
+                volume.save()
                 if action == 'attach':
                     attachment = item['attachment']
                     if volume.status == fields.VolumeStatus.IN_USE:
@@ -240,6 +241,7 @@ class SGServiceProxy(manager.Manager):
                         volume.finish_detach(attachment.id)
                     else:
                         attachment.destroy()
+                self.sync_volumes.pop(volume_id)
             except (exception.CascadedResourceNotFound, NotFound):
                 if action in ['disable', 'delete']:
                     LOG.info(_LI("disable or delete volume %s finished "),
@@ -658,9 +660,8 @@ class SGServiceProxy(manager.Manager):
             csd_instance_id = self._get_csd_instance_id(instance_uuid)
             csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            csd_sgs_client.volumes.attach_volume(csd_volume_id,
-                                                 csd_instance_id,
-                                                 instance_host)
+            csd_sgs_client.volumes.attach(csd_volume_id, csd_instance_id,
+                                          instance_host)
             self.sync_volumes[volume_id] = {'action': 'attach',
                                             'attachment': attachment}
         except Exception:
@@ -677,8 +678,7 @@ class SGServiceProxy(manager.Manager):
             csd_instance_id = self._get_csd_instance_id(instance_uuid)
             csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
-            csd_sgs_client.volumes.detach_volume(csd_volume_id,
-                                                 csd_instance_id)
+            csd_sgs_client.volumes.detach(csd_volume_id, csd_instance_id)
             self.sync_volumes[volume_id] = {'action': 'detach',
                                             'attachment': attachment}
         except Exception:
