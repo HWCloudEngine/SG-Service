@@ -162,7 +162,7 @@ class Snapshot(BASE, SGServiceBase):
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
     volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
-    volume_size = Column(Integer, nullable=False),
+    volume_size = Column(Integer)
     sg_client = Column(Text, nullable=True)
 
     volume = orm.relationship(
