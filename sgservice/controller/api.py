@@ -308,6 +308,11 @@ class API(base.Base):
                       instance_uuid)
             LOG.error(msg)
             raise exception.InvalidInstance(reason=msg)
+        if instance._info['OS-EXT-AZ:availability_zone'] != volume.availability_zone:
+            msg = _LE("Instance and volume are in different availability "
+                      "zones")
+            LOG.error(msg)
+            raise exception.InvalidInstance(reason=msg)
         instance_name = instance.name
         if "server@" in instance_name:
             logical_instance_id = instance_name.split('@')[1]
