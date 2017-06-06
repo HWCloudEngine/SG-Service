@@ -57,7 +57,7 @@ class CheckpointViewBuilder(common.ViewBuilder):
                 'description': checkpoint.get('display_description'),
                 'replication_id': checkpoint.get('replication_id'),
                 'master_snapshot': checkpoint.get('master_snapshot'),
-                'slave_snapshot': checkpoint.get('salve_snapshot')
+                'slave_snapshot': checkpoint.get('slave_snapshot')
             }
         }
         return checkpoint_ref

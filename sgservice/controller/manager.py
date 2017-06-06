@@ -696,13 +696,18 @@ class ControllerManager(manager.Manager):
                 if driver_volume['status'] != fields.VolumeStatus.DELETED:
                     self.driver.disable_sg(sg_client, volume)
                 cinder_volume = cinder_client.volumes.get(logical_volume_id)
-                if cinder_volume.status == 'in-use':
+                if (cinder_volume.status == 'in-use'
+                    and len(cinder_volume.attachments) == 1
+                    and cinder_volume.attachments[0]['server_id']
+                        == sg_client.instance):
                     self._detach_volume_from_sg(context, logical_volume_id,
                                                 sg_client)
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'available')
-                if cinder_volume.status != 'available':
-                    self._finish_delete_volume(SYNC_FAILED, volume)
+                    cinder_volume = self._wait_cinder_volume_status(
+                        cinder_client, logical_volume_id, 'available')
+                    if cinder_volume.status != 'available':
+                        self._finish_delete_volume(SYNC_FAILED, volume)
+                    else:
+                        self._finish_delete_volume(SYNC_SUCCEED, volume)
                 else:
                     self._finish_delete_volume(SYNC_SUCCEED, volume)
             else:

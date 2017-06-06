@@ -308,6 +308,11 @@ class API(base.Base):
                       instance_uuid)
             LOG.error(msg)
             raise exception.InvalidInstance(reason=msg)
+        if instance._info['OS-EXT-AZ:availability_zone'] != volume.availability_zone:
+            msg = _LE("Instance and volume are in different availability "
+                      "zones")
+            LOG.error(msg)
+            raise exception.InvalidInstance(reason=msg)
         instance_name = instance.name
         if "server@" in instance_name:
             logical_instance_id = instance_name.split('@')[1]
@@ -1364,7 +1369,8 @@ class API(base.Base):
         if checkpoint['status'] not in [fields.CheckpointStatus.AVAILABLE]:
             msg = _('Checkpoint to rollback must be available')
             raise exception.InvalidCheckpoint(reason=msg)
-        replication = objects.Replication.get_by_id(checkpoint.replication_id)
+        replication = objects.Replication.get_by_id(context,
+                                                    checkpoint.replication_id)
         if replication.status != fields.ReplicationStatus.ENABLED:
             msg = _('Replication status of this checkpoint must be enabled, '
                     'but current is %s' % replication.status)
