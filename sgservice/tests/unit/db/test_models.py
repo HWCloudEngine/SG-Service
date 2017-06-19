@@ -199,40 +199,6 @@ class VolumesDBTestCase(base.TestCase):
         volume_ref = db.volume_get(self.ctxt, volume_ref['id'])
         self.assertEqual('enabling', volume_ref['status'])
 
-    def test_volume_get_join_replication(self):
-        def _create_replication(master_volume, slave_volume):
-            values = {
-                'id': uuidutils.generate_uuid(),
-                'master_volume': master_volume,
-                'slave_volume': slave_volume,
-                'display_name': 'test replication',
-                'project_id': self.ctxt.tenant,
-                'display_description': 'test replication',
-                'status': 'enabling',
-            }
-            return db.replication_create(self.ctxt, values)
-
-        master_volume_ref = self._create_volume()
-        slave_volume_ref = self._create_volume()
-
-        replication_ref = _create_replication(master_volume_ref['id'],
-                                              slave_volume_ref['id'])
-        db.volume_update(self.ctxt, master_volume_ref['id'],
-                         {"replicate_status": 'enabling',
-                          'replication_id': replication_ref['id']})
-        db.volume_update(self.ctxt, slave_volume_ref['id'],
-                         {"replicate_status": 'enabling',
-                          'replication_id': replication_ref['id']})
-
-        master_volume_ref = db.volume_get(self.ctxt, master_volume_ref['id'],
-                                          'replication')
-        slave_volume_ref = db.volume_get(self.ctxt, slave_volume_ref['id'],
-                                         'replication')
-        self.assertEqual(replication_ref['id'],
-                         master_volume_ref.replication['id'])
-        self.assertEqual(replication_ref['id'],
-                         slave_volume_ref.replication['id'])
-
 
 class BackupsDBTestCase(base.TestCase):
     """Test cases for backups table"""

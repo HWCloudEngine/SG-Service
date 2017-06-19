@@ -15,7 +15,6 @@ import webob
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi

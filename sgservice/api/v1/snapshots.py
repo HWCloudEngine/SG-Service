@@ -14,7 +14,6 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 import webob
 
 from sgservice.api import common

@@ -15,10 +15,10 @@
 from oslo_versionedobjects import fields
 
 from sgservice import db
-from sgservice import objects
-from sgservice.objects import base
 from sgservice import exception
 from sgservice.i18n import _
+from sgservice import objects
+from sgservice.objects import base
 
 
 @base.SGServiceObjectRegistry.register

@@ -18,7 +18,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 from sgservice.common.clients import utils
-from sgservice.i18n import _LI, _LE
+from sgservice.i18n import _LE
 
 LOG = logging.getLogger(__name__)
 

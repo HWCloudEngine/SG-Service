@@ -23,11 +23,11 @@ from oslo_serialization import jsonutils
 from oslo_service import loopingcall
 from oslo_utils import excutils
 from oslo_utils import importutils
-
 from wormholeclient.client import Client as AgentClient
-from sgservice.common import constants
+
 from sgservice.common.clients import cinder
 from sgservice.common.clients import nova
+from sgservice.common import constants
 from sgservice import context as sg_context
 from sgservice import exception
 from sgservice.i18n import _, _LE, _LI
@@ -339,8 +339,8 @@ class ControllerManager(manager.Manager):
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
             if (cinder_volume.status == 'detaching'
-                  and len(cinder_volume.attachments) == 1
-                  and cinder_volume.attachments[0]['server_id']
+                    and len(cinder_volume.attachments) == 1
+                    and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
@@ -421,8 +421,7 @@ class ControllerManager(manager.Manager):
             return nova.get_project_context_client(context)
 
     def _attach_volume_to_sg(self, context, volume_id, sg_client):
-        """ Attach volume to sg-client and get mountpoint
-        """
+        """Attach volume to sg-client and get mountpoint"""
         try:
             nova_client = self._create_nova_client(context)
             volume_attachment = nova_client.volumes.create_server_volume(
@@ -534,7 +533,7 @@ class ControllerManager(manager.Manager):
                 LOG.error(e)
                 continue
             if (driver_volume['replicate_status']
-                in REPLICATE_STATUS_ACTION.keys()):
+                    in REPLICATE_STATUS_ACTION.keys()):
                 continue
             replicate_status = driver_volume['replicate_status']
             if action in ['create_replicate', 'enable_replicate']:
@@ -804,7 +803,8 @@ class ControllerManager(manager.Manager):
         try:
             instance_host = attachment.instance_host
             sgs_agent = AgentClient(instance_host, CONF.sgs_agent_port)
-            mountpoint = sgs_agent.connect_volume(connection_info)['mountpoint']
+            resp = sgs_agent.connect_volume(connection_info)
+            mountpoint = resp['mountpoint']
         except Exception as err:
             LOG.error(_LE("attach iscsi mode volume failed, err:%s"), err)
             # terminate connection rollback attach
@@ -886,7 +886,8 @@ class ControllerManager(manager.Manager):
     def attach_volume(self, context, volume_id, attachment_id):
         attachment = objects.VolumeAttachment.get_by_id(context, attachment_id)
         instance_uuid = attachment.instance_uuid
-        LOG.info(_LI("Attach volume '%s' to '%s'"), volume_id, instance_uuid)
+        LOG.info(_LI("Attach volume '%(vol_id)s' to '%(instance_id)s'"),
+                 {"vol_id": volume_id, "instance_id": instance_uuid})
         volume = objects.Volume.get_by_id(context, volume_id)
 
         try:
@@ -895,7 +896,7 @@ class ControllerManager(manager.Manager):
             else:
                 self._do_agent_attach_volume(context, volume, attachment)
         except Exception as err:
-            msg = _LE("Attach volume failed, err:%s" % err)
+            msg = (_LE("Attach volume failed, err:%s"), err)
             LOG.error(msg)
             self._finish_attach_volume(SYNC_FAILED, volume, attachment)
 
@@ -947,7 +948,7 @@ class ControllerManager(manager.Manager):
             self.driver.terminate_connection(sg_client, volume,
                                              constants.AGENT_MODE, device)
             self._finish_detach_volume(SYNC_SUCCEED, volume, attachment)
-        except Exception as err:
+        except Exception:
             self._rollback_agent_detach_volume(context, volume, attachment)
 
     def _rollback_agent_detach_volume(self, context, volume, attachment):
@@ -1018,7 +1019,8 @@ class ControllerManager(manager.Manager):
     def detach_volume(self, context, volume_id, attachment_id):
         attachment = objects.VolumeAttachment.get_by_id(context, attachment_id)
         instance_uuid = attachment.instance_uuid
-        LOG.info(_LI("Detach volume '%s' from '%s'"), volume_id, instance_uuid)
+        LOG.info(_LI("Detach volume '%(vol_id)s' from '%(instance_id)s'"),
+                 {"vol_id": volume_id, "instance_id": instance_uuid})
         volume = objects.Volume.get_by_id(context, volume_id)
 
         try:
@@ -1029,7 +1031,7 @@ class ControllerManager(manager.Manager):
             else:
                 self._do_agent_detach_volume(context, volume, attachment)
         except Exception as err:
-            msg = _LE("Attach volume failed, err:%s" % err)
+            msg = (_LE("Attach volume failed, err:%s"), err)
             LOG.error(msg)
             self._finish_detach_volume(SYNC_FAILED, volume, attachment)
 

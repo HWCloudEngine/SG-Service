@@ -27,7 +27,6 @@ from oslo_db.sqlalchemy import session as db_session
 from oslo_db.sqlalchemy import utils as sqlalchemyutils
 from oslo_log import log as logging
 from oslo_utils import timeutils
-from oslo_utils import uuidutils
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.expression import literal_column
 from sqlalchemy.sql import func
