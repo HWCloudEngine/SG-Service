@@ -17,22 +17,22 @@ import retrying
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging as messaging
-from oslo_utils import excutils
-from oslo_service import loopingcall
 from oslo_serialization import jsonutils
-
+from oslo_service import loopingcall
+from oslo_utils import excutils
 from sgsclient.exceptions import NotFound
-from sgservice.i18n import _, _LI, _LE
-from sgservice.common import constants
+
 from sgservice.common.clients import cinder
 from sgservice.common.clients import nova
 from sgservice.common.clients import sgs
+from sgservice.common import constants
+from sgservice import context as sg_context
 from sgservice.controller.api import API as ServiceAPI
 from sgservice import exception
+from sgservice.i18n import _, _LI, _LE
+from sgservice import manager
 from sgservice import objects
 from sgservice.objects import fields
-from sgservice import manager
-from sgservice import context as sg_context
 
 proxy_manager_opts = [
     cfg.IntOpt('sync_interval',
@@ -155,12 +155,7 @@ class SGServiceProxy(manager.Manager):
                                      initial_delay=self.sync_status_interval)
 
     def init_host(self, **kwargs):
-        """ list all ing-status objects(volumes, snapshot, backups);
-            add to self.volumes_mapping_cache, backups_mapping_cache,
-            snapshots_mapping_cache, and replicates_mapping;
-            start looping call to sync volumes, backups, snapshots,
-            and replicates status;
-        """
+        """list all ing-status objects(volumes, snapshot, backups)"""
         filters = {'availability_zone': CONF.availability_zone}
         volumes = objects.VolumeList.get_all(self.admin_context,
                                              filters=filters)
@@ -169,7 +164,7 @@ class SGServiceProxy(manager.Manager):
                 self.sync_volumes[volume.id] = {
                     'action': VOLUME_STATUS_ACTION_MAPPING[volume.status]}
             if (volume.replicate_status
-                in REPLICATE_STATUS_ACTION_MAPPING.keys()):
+                    in REPLICATE_STATUS_ACTION_MAPPING.keys()):
                 self.sync_replicates[volume.id] = {
                     'action': REPLICATE_STATUS_ACTION_MAPPING[
                         volume.replicate_status]}
@@ -203,9 +198,10 @@ class SGServiceProxy(manager.Manager):
                         checkpoint.status]}
 
     def _sync_volumes_status(self):
-        """ sync cascaded volumes'(in volumes_mapping_cache) status;
-            and update cascading volumes' status
+        """sync cascaded volumes'(in volumes_mapping_cache) status;
+        and update cascading volumes' status
         """
+
         for volume_id, item in self.sync_volumes.items():
             action = item['action']
             try:
@@ -258,6 +254,7 @@ class SGServiceProxy(manager.Manager):
         """ sync cascaded backups'(in volumes_mapping_cache) status;
             update cascading backups' status
         """
+
         for backup_id, item in self.sync_backups.items():
             action = item['action']
             try:
@@ -297,8 +294,8 @@ class SGServiceProxy(manager.Manager):
     def _sync_snapshots_status(self):
         """ sync cascaded snapshots'(in volumes_mapping_cache) status;
             update cascading snapshots' status;
-            # TODO update cascading checkpoints' status if needed;
         """
+
         for snapshot_id, item in self.sync_snapshots.items():
             action = item['action']
             try:
@@ -340,6 +337,7 @@ class SGServiceProxy(manager.Manager):
         """ sync cascaded volumes'(in volumes_mapping_cache) replicate-status;
             update cascading volumes' replicate-status;
         """
+
         for volume_id, item in self.sync_replicates.items():
             action = item['action']
             try:
@@ -533,12 +531,13 @@ class SGServiceProxy(manager.Manager):
                 self.volumes_mapping_cache[volume_id] = csd_volume_id
                 return csd_volume_id
             else:
-                msg = _LE("get cascaded cinder volume-id of %s failed" %
-                          volume_id)
+                msg = (_LE("get cascaded cinder volume-id of %s failed"),
+                       volume_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
         except Exception as err:
-            LOG.info(_LE("get cascaded cinder volume-id of %s err"), volume_id)
+            LOG.info(_LE("get cascaded cinder volume-id of %s err"),
+                     volume_id)
             raise err
 
     def _get_csd_sgs_volume_id(self, volume_id):
@@ -557,7 +556,7 @@ class SGServiceProxy(manager.Manager):
                 self.volumes_mapping_cache[volume_id] = csd_volume_id
                 return csd_volume_id
             else:
-                msg = _LE("get cascaded volume id of %s err" % volume_id)
+                msg = (_LE("get cascaded volume id of %s err"), volume_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
         except Exception as err:
@@ -643,8 +642,8 @@ class SGServiceProxy(manager.Manager):
                 csd_instance_id = vms[0]._info['id']
                 return csd_instance_id
             else:
-                msg = _LE("get cascaded nova instance-id of %s failed" %
-                          instance_id)
+                msg = (_LE("get cascaded nova instance-id of %s failed"),
+                       instance_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
         except Exception as err:
@@ -708,7 +707,7 @@ class SGServiceProxy(manager.Manager):
                 self.backups_mapping_cache[backup_id] = csd_backup_id
                 return csd_backup_id
             else:
-                msg = _LE("get cascaded sgs backup-id of %s err" % backup_id)
+                msg = (_LE("get cascaded sgs backup-id of %s err"), backup_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
         except Exception as err:
@@ -938,7 +937,7 @@ class SGServiceProxy(manager.Manager):
                 self.snapshots_mapping_cache[snapshot_id] = csd_snapshot_id
                 return csd_snapshot_id
             else:
-                msg = _LE("get cascaded snapshot-id of %s err" % snapshot_id)
+                msg = (_LE("get cascaded snapshot-id of %s err"), snapshot_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
         except Exception as err:

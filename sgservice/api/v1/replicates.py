@@ -14,15 +14,12 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 import webob
 
 from sgservice.api import common
 from sgservice.api.openstack import wsgi
-from sgservice.api.v1.volumes import VolumeViewBuilder
 from sgservice.common import constants
 from sgservice.controller.api import API as ServiceAPI
-from sgservice import exception
 from sgservice.i18n import _, _LI
 
 CONF = cfg.CONF

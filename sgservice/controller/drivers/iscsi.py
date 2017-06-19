@@ -19,12 +19,12 @@ from oslo_serialization import jsonutils
 from sgservice.common import constants
 from sgservice.controller.sgdriver import SGDriver
 from sgservice import exception
-from sgservice.i18n import _, _LE
+from sgservice.i18n import _LE
 from sgservice.objects import fields
 
 from sg_control.backup_ctrl import BackupCtrl
-from sg_control.control_api import common_pb2
 from sg_control.control_api import backup_pb2
+from sg_control.control_api import common_pb2
 from sg_control.control_api import replicate_pb2
 from sg_control.control_api import snapshot_pb2
 from sg_control.control_api import volume_pb2
@@ -113,12 +113,12 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.volume_ctrl(sg_client).ListDevices()
         except Exception as exc:
-            msg = _LE('list devices failed, err: %s' % exc)
+            msg = (_LE('list devices failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('list devices failed, err_no: %s' % res.status)
+            msg = (_LE('list devices failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
         return res.devices
@@ -129,12 +129,12 @@ class ISCSIDriver(SGDriver):
             res = self.volume_ctrl(sg_client).EnableSG(
                 volume.id, vol_size, device)
         except Exception as exc:
-            msg = _LE('enable sg failed, err: %s' % exc)
+            msg = (_LE('enable sg failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('enable sg failed, err_no: %s' % res.status)
+            msg = (_LE('enable sg failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -142,12 +142,12 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.volume_ctrl(sg_client).DisableSG(volume.id)
         except Exception as exc:
-            msg = _LE('disable sg failed, err: %s' % exc)
+            msg = (_LE('disable sg failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('disable sg failed, err_no: %s' % res.status)
+            msg = (_LE('disable sg failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -155,7 +155,7 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.volume_ctrl(sg_client).GetVolume(volume.id)
         except Exception as exc:
-            msg = _LE('get volume  failed, err: %s' % exc)
+            msg = (_LE('get volume  failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -185,12 +185,12 @@ class ISCSIDriver(SGDriver):
             res = self.volume_ctrl(sg_client).InitializeConnection(
                 volume.id, mode)
         except Exception as exc:
-            msg = _LE('initialize connection failed, err:%s' % exc)
+            msg = (_LE('initialize connection failed, err:%s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('initialize connection failed, err_no:%s' % res.status)
+            msg = (_LE('initialize connection failed, err_no:%s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
         target_portal = "%s:3260" % sg_client.host
@@ -209,12 +209,12 @@ class ISCSIDriver(SGDriver):
             res = self.volume_ctrl(sg_client).TerminateConnection(
                 volume.id, mode, device)
         except Exception as exc:
-            msg = _LE('terminate connection failed, err:%s' % exc)
+            msg = (_LE('terminate connection failed, err:%s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('terminate connection failed, err_no:%s' % res.status)
+            msg = (_LE('terminate connection failed, err_no:%s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -222,12 +222,12 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.volume_ctrl(sg_client).AttachVolume(volume.id, device)
         except Exception as exc:
-            msg = _LE('attach volume failed, err:%s' % exc)
+            msg = (_LE('attach volume failed, err:%s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('attach volume failed, err_no:%s' % res.status)
+            msg = (_LE('attach volume failed, err_no:%s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -235,12 +235,12 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.volume_ctrl(sg_client).DetachVolume(volume.id)
         except Exception as exc:
-            msg = _LE('detach volume failed, err:%s' % exc)
+            msg = (_LE('detach volume failed, err:%s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('detach volume failed, err_no:%s' % res.status)
+            msg = (_LE('detach volume failed, err_no:%s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -257,12 +257,12 @@ class ISCSIDriver(SGDriver):
             res = self.backup_ctrl(sg_client).CreateBackup(
                 backup_mode, backup_type, vol_id, vol_size, backup_id)
         except Exception as exc:
-            msg = _LE('create backup failed, err: %s' % exc)
+            msg = (_LE('create backup failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('create backup failed, err_no: %s' % res.status)
+            msg = (_LE('create backup failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -273,12 +273,12 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.backup_ctrl(sg_client).DeleteBackup(backup_id, vol_id)
         except Exception as exc:
-            msg = _LE('delete backup failed, err: %s' % exc)
+            msg = (_LE('delete backup failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('delete backup failed, err_no: %s' % res.status)
+            msg = (_LE('delete backup failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -299,12 +299,12 @@ class ISCSIDriver(SGDriver):
                 backup_id, backup_type, vol_id, vol_size, new_vol_id,
                 new_vol_size, new_device)
         except Exception as exc:
-            msg = _LE('restore backup failed, err: %s' % exc)
+            msg = (_LE('restore backup failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('restore backup failed, err_no: %s' % res.status)
+            msg = (_LE('restore backup failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -315,7 +315,7 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.backup_ctrl(sg_client).GetBackup(backup_id, vol_id)
         except Exception as exc:
-            msg = _LE('get backup failed, err: %s' % exc)
+            msg = (_LE('get backup failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -324,7 +324,7 @@ class ISCSIDriver(SGDriver):
                 backup = {'id': backup.id,
                           'status': fields.BackupStatus.DELETED}
             else:
-                msg = _LE('get backup failed, err_no: %s' % res.status)
+                msg = (_LE('get backup failed, err_no: %s'), res.status)
                 LOG.error(msg)
                 raise exception.SGDriverError(reason=msg)
         else:
@@ -348,12 +348,13 @@ class ISCSIDriver(SGDriver):
             res = self.snap_ctrl(sg_client).CreateSnapshot(
                 snap_type, vol_id, snap_id, checkpoint_uuid)
         except Exception as exc:
-            msg = _LE('create snapshot failed, err: %s' % exc)
+            msg = (_LE('create snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.header.status != 0:
-            msg = _LE('create snapshot failed, err_no: %s' % res.header.status)
+            msg = (_LE('create snapshot failed, err_no: %s'),
+                   res.header.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -370,12 +371,13 @@ class ISCSIDriver(SGDriver):
             res = self.snap_ctrl(sg_client).DeleteSnapshot(
                 snap_type, vol_id, snap_id, checkpoint_uuid)
         except Exception as exc:
-            msg = _LE('delete snapshot failed, err: %s' % exc)
+            msg = (_LE('delete snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.header.status != 0:
-            msg = _LE('delete snapshot failed, err_no: %s' % res.header.status)
+            msg = (_LE('delete snapshot failed, err_no: %s'),
+                   res.header.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -392,13 +394,13 @@ class ISCSIDriver(SGDriver):
             res = self.snap_ctrl(sg_client).RollbackSnapshot(
                 snap_type, vol_id, snap_id, checkpoint_uuid)
         except Exception as exc:
-            msg = _LE('rollback snapshot failed, err: %s' % exc)
+            msg = (_LE('rollback snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.header.status != 0:
-            msg = _LE('rollback snapshot failed, err_no: %s' %
-                      res.header.status)
+            msg = (_LE('rollback snapshot failed, err_no: %s'),
+                   res.header.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -409,7 +411,7 @@ class ISCSIDriver(SGDriver):
         try:
             res = self.snap_ctrl(sg_client).GetSnapshot(vol_id, snap_id)
         except Exception as exc:
-            msg = _LE('get snapshot failed, err: %s' % exc)
+            msg = (_LE('get snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -418,8 +420,8 @@ class ISCSIDriver(SGDriver):
                 snapshot = {'id': snapshot.id,
                             'status': fields.SnapshotStatus.DELETED}
             else:
-                msg = _LE('get snapshot failed, err_no: %s' %
-                          res.header.status)
+                msg = (_LE('get snapshot failed, err_no: %s'),
+                       res.header.status)
                 LOG.error(msg)
                 raise exception.SGDriverError(reason=msg)
         else:
@@ -436,26 +438,26 @@ class ISCSIDriver(SGDriver):
             res = self.snap_ctrl(sg_client).CreateVolumeFromSnap(
                 snapshot.volume_id, snapshot.id, new_volume_id, device)
         except Exception as exc:
-            msg = _LE('create volume from snapshot failed, err: %s' % exc)
+            msg = (_LE('create volume from snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.header.status != 0:
-            msg = _LE('create volume from snapshot failed, '
-                      'err_noe: %s' % res.header.status)
+            msg = (_LE('create volume from snapshot failed, '
+                       'err_noe: %s'), res.header.status)
             raise exception.SGDriverError(reason=msg)
 
     def query_volume_from_snapshot(self, sg_client, new_volume_id):
         try:
             res = self.snap_ctrl(sg_client).QueryVolumeFromSnap(new_volume_id)
         except Exception as exc:
-            msg = _LE('query volume from snapshot failed, err: %s' % exc)
+            msg = (_LE('query volume from snapshot failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.header.status != 0:
-            msg = _LE('query volume from snapshot failed, '
-                      'err_noe: %s' % res.header.status)
+            msg = (_LE('query volume from snapshot failed, '
+                       'err_noe: %s'), res.header.status)
             raise exception.SGDriverError(reason=msg)
         return {'id': new_volume_id,
                 'status': VOLUME_STATUS_MAPPING[res.vol_status]}
@@ -469,12 +471,12 @@ class ISCSIDriver(SGDriver):
             res = self.replicate_ctrl(sg_client).CreateReplication(
                 rep_uuid, local_volume, role, peer_volumes)
         except Exception as exc:
-            msg = _LE('create replicate failed, err: %s' % exc)
+            msg = (_LE('create replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('create replicate failed, err_no: %s' % res.status)
+            msg = (_LE('create replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -485,12 +487,12 @@ class ISCSIDriver(SGDriver):
             res = self.replicate_ctrl(sg_client).EnableReplication(vol_id,
                                                                    role)
         except Exception as exc:
-            msg = _LE('enable replicate failed, err: %s' % exc)
+            msg = (_LE('enable replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('enable replicate failed, err_no: %s' % res.status)
+            msg = (_LE('enable replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -501,12 +503,12 @@ class ISCSIDriver(SGDriver):
             res = self.replicate_ctrl(sg_client).DisableReplication(
                 vol_id, role)
         except Exception as exc:
-            msg = _LE('disable replicate failed, err: %s' % exc)
+            msg = (_LE('disable replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('disable replicate failed, err_no: %s' % res.status)
+            msg = (_LE('disable replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -519,12 +521,12 @@ class ISCSIDriver(SGDriver):
                 vol_id, role, checkpoint_id=checkpoint_id,
                 snapshot_id=snapshot_id)
         except Exception as exc:
-            msg = _LE('failover replicate failed, err: %s' % exc)
+            msg = (_LE('failover replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('failover replicate failed, err_no: %s' % res.status)
+            msg = (_LE('failover replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -535,12 +537,12 @@ class ISCSIDriver(SGDriver):
             res = self.replicate_ctrl(sg_client).DeleteReplication(vol_id,
                                                                    role)
         except Exception as exc:
-            msg = _LE('delete replicate failed, err: %s' % exc)
+            msg = (_LE('delete replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('delete replicate failed, err_no: %s' % res.status)
+            msg = (_LE('delete replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
@@ -551,11 +553,11 @@ class ISCSIDriver(SGDriver):
             res = self.replicate_ctrl(sg_client).ReverseReplication(
                 vol_id, role)
         except Exception as exc:
-            msg = _LE('reverse replicate failed, err: %s' % exc)
+            msg = (_LE('reverse replicate failed, err: %s'), exc)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
         if res.status != 0:
-            msg = _LE('reverse replicate failed, err_no: %s' % res.status)
+            msg = (_LE('reverse replicate failed, err_no: %s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
