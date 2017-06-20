@@ -484,11 +484,9 @@ def volume_attach(context, values):
     return IMPL.volume_attach(context, values)
 
 
-def volume_attached(context, attachment_id, instance_id, host_name, mountpoint,
-                    attach_mode='rw'):
+def volume_attached(context, attachment_id, mountpoint):
     """Ensure that a volume is set as attached."""
-    return IMPL.volume_attached(context, attachment_id, instance_id, host_name,
-                                mountpoint, attach_mode)
+    return IMPL.volume_attached(context, attachment_id, mountpoint)
 
 
 def volume_attachment_get(context, attachment_id, session=None):

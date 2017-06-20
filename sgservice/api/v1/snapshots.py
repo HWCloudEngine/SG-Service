@@ -14,7 +14,6 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 import webob
 
 from sgservice.api import common
@@ -67,7 +66,9 @@ class SnapshotViewBuilder(common.ViewBuilder):
                 'volume_id': snapshot.volume_id,
                 'status': snapshot.status,
                 'checkpoint_id': snapshot.checkpoint_id,
-                'destination': snapshot.destination
+                'destination': snapshot.destination,
+                'availability_zone': snapshot.availability_zone,
+                'replication_zone': snapshot.replication_zone
             }
         }
         return snapshot_ref

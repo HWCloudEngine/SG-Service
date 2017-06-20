@@ -14,7 +14,6 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 import webob
 from webob import exc
 
@@ -57,7 +56,7 @@ class CheckpointViewBuilder(common.ViewBuilder):
                 'description': checkpoint.get('display_description'),
                 'replication_id': checkpoint.get('replication_id'),
                 'master_snapshot': checkpoint.get('master_snapshot'),
-                'slave_snapshot': checkpoint.get('salve_snapshot')
+                'slave_snapshot': checkpoint.get('slave_snapshot')
             }
         }
         return checkpoint_ref

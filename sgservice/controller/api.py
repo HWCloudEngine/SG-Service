@@ -21,8 +21,9 @@ from oslo_utils import excutils
 from oslo_utils import timeutils
 import webob.exc
 
-from sgservice.common import constants
 from sgservice.common.clients import cinder
+from sgservice.common.clients import nova
+from sgservice.common import constants
 from sgservice import context as sg_context
 from sgservice.controller import rpcapi as controller_rpcapi
 from sgservice.db import base
@@ -52,7 +53,7 @@ class API(base.Base):
             ctxt, topic, disabled=False)
         for srv in services:
             if (self._az_matched(srv, availability_zone) and
-                        srv.host == host and srv.is_up):
+                    srv.host == host and srv.is_up):
                 return True
         return False
 
@@ -113,16 +114,17 @@ class API(base.Base):
 
     def delete(self, context, volume):
         if volume.status not in [fields.VolumeStatus.AVAILABLE,
-                                 fields.VolumeStatus.ERROR]:
-            msg = _('SG Volume status must be available or error, '
-                    'but current is %s.' % volume.status)
+                                 fields.VolumeStatus.ERROR,
+                                 fields.VolumeStatus.ERROR_RESTORING]:
+            msg = (_('SG Volume status must be available or error, '
+                     'but current is %s.'), volume.status)
             raise exception.InvalidVolume(reason=msg)
 
         if volume.replication_id is not None:
             msg = (_("Volume '%(vol_id)s' belongs to the replication "
-                     "'%(rep_id)s', can't be deleted.")
-                   % {'vol_id': volume.id,
-                      'rep_id': volume.replication_id})
+                     "'%(rep_id)s', can't be deleted."),
+                   {'vol_id': volume.id,
+                    'rep_id': volume.replication_id})
             raise exception.InvalidVolume(reason=msg)
 
         snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
@@ -138,11 +140,14 @@ class API(base.Base):
 
     def enable_sg(self, context, volume_id, name=None, description=None,
                   metadata=None):
+        volume = None
         try:
-            self.get(context, volume_id)
-            msg = (_LE("The volume '%s' already enabled SG.") % volume_id)
-            LOG.error(msg)
-            raise exception.InvalidVolume(reason=msg)
+            volume = self.get(context, volume_id)
+            if volume.status != fields.VolumeStatus.AVAILABLE:
+                msg = (_LE("The volume '%s' already enabled SG or error.") %
+                       volume_id)
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
         except exception.VolumeNotFound:
             pass
 
@@ -164,6 +169,9 @@ class API(base.Base):
 
         if name is None:
             name = cinder_volume.name
+            if volume and volume.name:
+                name = volume.name
+
         if description is None:
             description = cinder_volume.description
 
@@ -186,7 +194,7 @@ class API(base.Base):
 
         try:
             objects.Volume.get_by_id(context, id=volume_id,
-                                     read_deleted='only')
+                                     read_deleted='yes')
             volume = objects.Volume.reset(context, volume_id,
                                           volume_properties)
         except Exception:
@@ -201,7 +209,7 @@ class API(base.Base):
     def disable_sg(self, context, volume, cascade=False):
         if volume.status != fields.VolumeStatus.ENABLED:
             msg = (_('Volume %(vol_id)s to be disabled-sg status must be'
-                     'enabled, but current status is %(status)s.')
+                     ' enabled, but current status is %(status)s.')
                    % {'vol_id': volume.id,
                       'status': volume.status})
             raise exception.InvalidVolume(reason=msg)
@@ -273,82 +281,73 @@ class API(base.Base):
         LOG.info(_LI("Get all volumes completed successfully."))
         return volumes
 
-    def reserve_volume(self, context, volume):
-        if volume.status != fields.VolumeStatus.ENABLED:
-            msg = (_('Volume %(vol_id)s to be reserved status must be'
-                     'enabled, but current status is %(status)s.')
-                   % {'vol_id': volume.id,
-                      'status': volume.status})
-            raise exception.InvalidVolume(reason=msg)
-        volume.update({'status': fields.VolumeStatus.ATTACHING})
-        volume.save()
-        LOG.info(_LI("Reserve volume completed successfully."))
-
-    def unreserve_volume(self, context, volume):
-        expected_status = fields.VolumeStatus.ATTACHING
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Unreserve volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.ENABLED})
-        volume.save()
-        LOG.info(_LI("Unreserve volume completed successfully."))
-
-    def begin_detaching(self, context, volume):
-        expected_status = fields.VolumeStatus.IN_USE
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Begin detaching volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.DETACHING})
-        volume.save()
-        LOG.info(_LI("Begin detaching volume completed successfully."))
-
-    def roll_detaching(self, context, volume):
-        expected_status = fields.VolumeStatus.DETACHING
-        actual_status = volume['status']
-        if actual_status != expected_status:
-            msg = (_('Roll detaching volume aborted, expected volume status '
-                     '%(expected_status)% but got %(actual_status)s')
-                   % {'expected_status': expected_status,
-                      'actual_status': actual_status})
-            raise exception.InvalidVolume(reason=msg)
-
-        volume.update({'status': fields.VolumeStatus.IN_USE})
-        volume.save()
-        LOG.info(_LI("Roll detaching of volume completed successfully."))
-
-    def attach(self, context, volume, instance_uuid, host_name, mountpoint,
-               mode):
+    def attach(self, context, volume, instance_uuid, instance_host, mode):
+        attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
+            context, volume.id, instance_uuid)
+        if len(attachments) == 1:
+            msg = (_LE("Volume:%(volume_id)s is already attached to "
+                       "instance:%(instance_id)s"),
+                   {"volume_id": volume.id, "instance_id": instance_uuid})
+            LOG.info(msg)
+            return
         access_mode = volume['access_mode']
         if access_mode is not None and access_mode != mode:
             LOG.error(_('being attached by different mode'))
             raise exception.InvalidVolumeAttachMode(mode=mode,
                                                     volume_id=volume.id)
 
-        attach_results = self.controller_rpcapi.attach_volume(context,
-                                                              volume,
-                                                              instance_uuid,
-                                                              host_name,
-                                                              mountpoint,
-                                                              mode)
-        LOG.info(_LI("Attach volume completed successfully."))
-        return attach_results
+        if volume['status'] != fields.VolumeStatus.ENABLED:
+            msg = _LE('volume to be attach must be enabled')
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
 
-    def detach(self, context, volume, attachment_id):
-        detach_results = self.controller_rpcapi.detach_volume(context,
-                                                              volume,
-                                                              attachment_id)
-        LOG.info(_LI("Detach volume completed successfully."))
-        return detach_results
+        nova_client = nova.get_project_context_client(context)
+        instance = nova_client.servers.get(instance_uuid)
+        if instance.status != 'ACTIVE':
+            msg = (_LE("instance:%s to attach volume must be active"),
+                   instance_uuid)
+            LOG.error(msg)
+            raise exception.InvalidInstance(reason=msg)
+        if instance._info[
+            'OS-EXT-AZ:availability_zone'] != volume.availability_zone:
+            msg = _LE("Instance and volume are in different availability "
+                      "zones")
+            LOG.error(msg)
+            raise exception.InvalidInstance(reason=msg)
+        instance_name = instance.name
+        if "server@" in instance_name:
+            logical_instance_id = instance_name.split('@')[1]
+        else:
+            logical_instance_id = instance_uuid
+
+        volume.update({'status': fields.VolumeStatus.ATTACHING,
+                       'previous_status': volume.status})
+        volume.save()
+        if len(attachments) == 0:
+            attachment = volume.begin_attach(instance_uuid, instance_host,
+                                             mode, logical_instance_id)
+        else:
+            attachment = attachments[0]
+            attachment.update(
+                {'attach_mode': mode,
+                 'attach_status': fields.VolumeAttachStatus.ATTACHING})
+            attachment.save()
+        self.controller_rpcapi.attach_volume(context, volume, attachment)
+        return attachment
+
+    def detach(self, context, volume, instance_uuid):
+        attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
+            context, volume.id, instance_uuid)
+        if len(attachments) == 0:
+            msg = (_LE("Volume:%(volume_id)s is not attached to "
+                       "instance:%(instance_id)s"),
+                   {"volume_id": volume.id, "instance_id": instance_uuid})
+            LOG.info(msg)
+            return
+
+        volume.update({'status': fields.VolumeStatus.DETACHING})
+        volume.save()
+        self.controller_rpcapi.detach_volume(context, volume, attachments[0])
 
     def initialize_connection(self, context, volume, connector):
         init_results = self.controller_rpcapi.initialize_connection(context,
@@ -368,10 +367,10 @@ class API(base.Base):
 
     def create_backup(self, context, name, description, volume,
                       backup_type='incremental', backup_destination='local'):
-        if volume['status'] not in [fields.VolumeStatus.ENABLED,
-                                    fields.VolumeStatus.IN_USE]:
+        if volume['status'] not in [fields.VolumeStatus.IN_USE,
+                                    fields.VolumeStatus.ENABLED]:
             msg = (_('Volume to be backed up should be enabled or in-use, '
-                     'but current status is "%s".') % volume['status'])
+                     'but current status is "%s".'), volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
         latest_backup = None
@@ -385,8 +384,8 @@ class API(base.Base):
                 latest_backup = max(backups.objects,
                                     key=lambda x: x['data_timestamp'])
             else:
-                msg = _('No backups available in %s '
-                        'to do an incremental backup.') % backup_destination
+                msg = (_('No backups available in %s '
+                         'to do an incremental backup.'), backup_destination)
                 raise exception.InvalidBackup(reason=msg)
 
         parent_id = None
@@ -434,8 +433,8 @@ class API(base.Base):
     def delete_backup(self, context, backup):
         if backup.status not in [fields.BackupStatus.AVAILABLE,
                                  fields.BackupStatus.ERROR]:
-            msg = _('Backup status must be available or error, '
-                    'but current is %s.' % backup.status)
+            msg = (_('Backup status must be available or error, '
+                     'but current is %s.'), backup.status)
             raise exception.InvalidBackup(reason=msg)
 
         deltas = self.get_all_backups(context,
@@ -453,7 +452,7 @@ class API(base.Base):
         try:
             c_volume = cinder_client.volumes.get(volume_id)
         except Exception:
-            msg = (_("Get the volume '%s' from cinder failed.") % volume_id)
+            msg = (_("Get the volume '%s' from cinder failed."), volume_id)
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
 
@@ -549,7 +548,7 @@ class API(base.Base):
 
     def export_record(self, context, backup):
         if backup['status'] != fields.BackupStatus.AVAILABLE:
-            msg = (_('Backup status must be available and not %s.') %
+            msg = (_('Backup status must be available and not %s.'),
                    backup['status'])
             raise exception.InvalidBackup(reason=msg)
 
@@ -590,10 +589,10 @@ class API(base.Base):
 
     def create_snapshot(self, context, name, description, volume,
                         checkpoint_id=None):
-        if volume['status'] not in [fields.VolumeStatus.ENABLED,
-                                    fields.VolumeStatus.IN_USE]:
-            msg = (_('Volume to create snapshot should be enabled or in-use, '
-                     'but current status is "%s".') % volume['status'])
+        if volume['status'] not in [fields.VolumeStatus.IN_USE,
+                                    fields.VolumeStatus.ENABLED]:
+            msg = (_('Volume to create snapshot should be in-use or enabled, '
+                     'but current status is "%s".'), volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
         snapshot = None
@@ -603,7 +602,6 @@ class API(base.Base):
             destination = constants.LOCAL_SNAPSHOT
         host = volume['host']
         try:
-
             kwargs = {
                 'host': host,
                 'user_id': context.user_id,
@@ -615,7 +613,8 @@ class API(base.Base):
                 'checkpoint_id': checkpoint_id,
                 'destination': destination,
                 'availability_zone': volume['availability_zone'],
-                'replication_zone': volume['replication_zone']
+                'replication_zone': volume['replication_zone'],
+                'volume_size': volume['size']
             }
             snapshot = objects.Snapshot(context, **kwargs)
             snapshot.create()
@@ -685,9 +684,10 @@ class API(base.Base):
         snapshot.save()
 
         volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
-        if volume["status"] not in [fields.VolumeStatus.ENABLED]:
-            msg = (_('Volume to rollback snapshot should be enabled or '
-                     'in-use, but current status is "%s".') % volume['status'])
+        if volume["status"] not in [fields.VolumeStatus.IN_USE,
+                                    fields.VolumeStatus.ENABLED]:
+            msg = (_('Volume to rollback snapshot should be in-use or enabled,'
+                     ' but current status is "%s".'), volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
         previous_status = volume['status']
@@ -704,7 +704,7 @@ class API(base.Base):
 
     def create_volume(self, context, snapshot=None, checkpoint=None,
                       volume_type=None, availability_zone=None, name=None,
-                      description=None, volume_id=None):
+                      description=None, volume_id=None, size=None):
         if snapshot is not None:
             if snapshot['status'] != fields.SnapshotStatus.AVAILABLE:
                 msg = (_('The specified snapshot must be available, '
@@ -729,8 +729,7 @@ class API(base.Base):
             if availability_zone is None:
                 availability_zone = master_snapshot['availability_zone']
             if (availability_zone != master_snapshot['availability_zone'] and
-                    availability_zone != slave_snapshot[
-                        'availability_zone']):
+                    availability_zone != slave_snapshot['availability_zone']):
                 msg = _("Invalid availability-zone")
                 LOG.error(msg)
                 raise exception.InvalidInput(reason=msg)
@@ -743,7 +742,12 @@ class API(base.Base):
             LOG.error(msg)
             raise exception.InvalidInput(reason=msg)
 
-        volume = objects.Volume.get_by_id(context, snapshot['volume_id'])
+        size = size if size else snapshot.volume_size
+        if size < snapshot.volume_size:
+            msg = _LE("Invalid size provided, the size can not smaller "
+                      "than volume_size of snapshot or checkpoint")
+            LOG.error(msg)
+            raise exception.InvalidParameterValue(err=msg)
         cinder_client = cinder.get_project_context_client(context)
         if volume_id is None:
             try:
@@ -752,11 +756,11 @@ class API(base.Base):
                     description=description,
                     volume_type=volume_type,
                     availability_zone=availability_zone,
-                    size=volume['size'])
+                    size=size)
                 volume_id = cinder_volume.id
             except Exception as err:
-                msg = _("Using cinder-client to create new volume failed, "
-                        "err: %s." % err)
+                msg = (_("Using cinder-client to create new volume failed, "
+                         "err: %s."), err)
                 LOG.error(msg)
                 raise exception.CinderClientError(reason=msg)
         else:
@@ -770,14 +774,14 @@ class API(base.Base):
             metadata = {'logicalVolumeId': volume_id}
 
         volume_properties = {
-            'host': volume.host,
+            'host': snapshot.host,
             'user_id': context.user_id,
             'project_id': context.project_id,
             'display_name': cinder_volume.name,
             'display_description': cinder_volume.description,
             'metadata': metadata,
             'status': fields.VolumeStatus.CREATING,
-            'size': volume.size,
+            'size': size,
             'snapshot_id': snapshot.id
         }
 
@@ -807,8 +811,8 @@ class API(base.Base):
                            slave_volume):
         if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
                                            fields.VolumeStatus.IN_USE]:
-            msg = (_('Master volume of a replication should be enabled '
-                     'or in-use, but current status is "%s".') %
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
                    master_volume['status'])
             raise exception.InvalidVolume(reason=msg)
         if master_volume['replication_id'] is not None:
@@ -817,11 +821,22 @@ class API(base.Base):
 
         if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
             msg = (_('Slave volume of a replication should be enabled, '
-                     'but current status is "%s".') %
+                     'but current status is "%s".'),
                    slave_volume['status'])
             raise exception.InvalidVolume(reason=msg)
         if slave_volume['replication_id'] is not None:
             msg = (_('Slave volume already belong to one replication'))
+            raise exception.InvalidVolume(reason=msg)
+
+        availability_zones = [master_volume.availability_zone,
+                              slave_volume.availability_zone]
+        replication_zones = [slave_volume.replication_zone,
+                             master_volume.replication_zone]
+        if availability_zones != replication_zones:
+            msg = (_('Volumes availability-zones:%(availability_zones)s and '
+                     'replication-zones:%(replication_zones)s not matched'),
+                   {"availability_zones": availability_zones,
+                    "replication_zones": replication_zones})
             raise exception.InvalidVolume(reason=msg)
 
         replication = None
@@ -1063,9 +1078,9 @@ class API(base.Base):
                          peer_volume):
         replicate_status = volume['replicate_status']
         if (replicate_status and
-                    replicate_status != fields.ReplicateStatus.DELETED):
+                replicate_status != fields.ReplicateStatus.DELETED):
             msg = (_('Replicate-status of create-replicate volume must '
-                     'be None or deleted, but current status is "%s".') %
+                     'be None or deleted, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1073,13 +1088,13 @@ class API(base.Base):
             and volume['status'] not in [fields.VolumeStatus.ENABLED,
                                          fields.VolumeStatus.IN_USE]):
             msg = (_('Master volume of a replication should be enabled '
-                     'or in-use, but current status is "%s".') %
+                     'or in-use, but current status is "%s".'),
                    volume['status'])
             raise exception.InvalidVolume(reason=msg)
         elif (mode == constants.REP_SLAVE
               and volume['status'] not in [fields.VolumeStatus.ENABLED]):
             msg = (_('Slave volume of a replication should be enabled, '
-                     'but current status is "%s".') %
+                     'but current status is "%s".'),
                    volume['status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1104,7 +1119,7 @@ class API(base.Base):
     def enable_replicate(self, context, volume):
         if volume['replicate_status'] not in [fields.ReplicateStatus.DISABLED]:
             msg = (_('Replicate-status of enable-replicate volume must be '
-                     'disabled, but current status is "%s".') %
+                     'disabled, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1121,7 +1136,7 @@ class API(base.Base):
     def disable_replicate(self, context, volume):
         if volume['replicate_status'] not in [fields.ReplicateStatus.ENABLED]:
             msg = (_('Replicate-status of disable-replicate volume must be '
-                     'enabled, but current status is "%s".') %
+                     'enabled, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1143,7 +1158,7 @@ class API(base.Base):
             fields.ReplicateStatus.ERROR
         ]:
             msg = (_('Replicate-status of delete-replicate volume must be '
-                     'disabled or or error, but current status is "%s".') %
+                     'disabled or or error, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1155,12 +1170,12 @@ class API(base.Base):
                            force=False):
         if volume['replicate_status'] not in [fields.ReplicateStatus.ENABLED]:
             msg = (_('Replicate-status of failover-replicate volume must '
-                     'be enabled, but current status is "%s".') %
+                     'be enabled, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
         if checkpoint_id is None and not force:
             msg = (_('Failover replicate must specify a checkpoint_id, or '
-                     'set force=True') % volume['replicate_status'])
+                     'set force=True'), volume['replicate_status'])
             raise exception.InvalidParameterValue(err=msg)
 
         volume.update(
@@ -1187,7 +1202,8 @@ class API(base.Base):
                 'replication_zone': volume['replication_zone'],
                 'display_name': display_name,
                 'display_description': display_name,
-                'checkpoint_id': checkpoint_id
+                'checkpoint_id': checkpoint_id,
+                'volume_size': volume['size']
             }
             snapshot = objects.Snapshot(context, **kwargs)
             snapshot.create()
@@ -1207,7 +1223,7 @@ class API(base.Base):
             fields.ReplicateStatus.FAILED_OVER
         ]:
             msg = (_('Replicate-status of reverse-replicate volume must '
-                     'be failed-over, but current status is "%s".') %
+                     'be failed-over, but current status is "%s".'),
                    volume['replicate_status'])
             raise exception.InvalidVolume(reason=msg)
 
@@ -1353,6 +1369,12 @@ class API(base.Base):
         if checkpoint['status'] not in [fields.CheckpointStatus.AVAILABLE]:
             msg = _('Checkpoint to rollback must be available')
             raise exception.InvalidCheckpoint(reason=msg)
+        replication = objects.Replication.get_by_id(context,
+                                                    checkpoint.replication_id)
+        if replication.status != fields.ReplicationStatus.ENABLED:
+            msg = (_('Replication status of this checkpoint must be enabled, '
+                     'but current is %s'), replication.status)
+            raise exception.InvalidCheckpoint(reason=msg)
         checkpoint.update({'status': fields.CheckpointStatus.ROLLING_BACK})
         checkpoint.save()
 
@@ -1360,16 +1382,18 @@ class API(base.Base):
             context, checkpoint['master_snapshot'])
         master_volume = objects.Volume.get_by_id(
             context, master_snapshot['volume_id'])
-        if master_volume["status"] not in [fields.VolumeStatus.ENABLED]:
-            msg = (_LI('Volume to rollback should be enabled, '
+        if master_volume["status"] not in [fields.VolumeStatus.IN_USE,
+                                           fields.VolumeStatus.ENABLED]:
+            msg = (_LI('Volume to rollback should be in-use or enabled, '
                        'but current status is "%s".'), master_volume['status'])
             raise exception.InvalidVolume(reason=msg)
         slave_snapshot = objects.Snapshot.get_by_id(
             context, checkpoint['slave_snapshot'])
         slave_volume = objects.Volume.get_by_id(
             context, slave_snapshot['volume_id'])
-        if slave_volume["status"] not in [fields.VolumeStatus.ENABLED]:
-            msg = (_LI('Volume to rollback should be enabled, '
+        if slave_volume["status"] not in [fields.VolumeStatus.IN_USE,
+                                          fields.VolumeStatus.ENABLED]:
+            msg = (_LI('Volume to rollback should be in-use or enabled, '
                        'but current status is "%s".'), slave_volume['status'])
             raise exception.InvalidVolume(reason=msg)
         try:

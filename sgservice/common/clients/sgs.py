@@ -10,15 +10,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from sgsclient import client as sc
-from sgsclient import exceptions as sgs_exception
 from keystoneclient import exceptions as keystone_exception
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
+from sgsclient import client as sc
+from sgsclient import exceptions as sgs_exception
 
 from sgservice.common.clients import utils
-from sgservice.i18n import _LI, _LE
+from sgservice.i18n import _LE
 
 LOG = logging.getLogger(__name__)
 

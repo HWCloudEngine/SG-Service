@@ -73,6 +73,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
         'access_mode': fields.StringField(nullable=True),
         'driver_data': fields.StringField(nullable=True),
         'snapshot_id': fields.StringField(nullable=True),
+        'sg_client': fields.StringField(nullable=True),
 
         'metadata': fields.DictOfStringsField(nullable=True),
         'volume_attachment': fields.ObjectField('VolumeAttachmentList',
@@ -240,6 +241,35 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
     def update_metadata(self, metadata, delete=False):
         self.metadata = db.volume_metadata_update(self._context, self.id,
                                                   metadata, delete)
+
+    def begin_attach(self, instance_uuid, instance_host, attach_mode,
+                     logical_instance_id):
+        attachment = objects.VolumeAttachment(
+            context=self._context,
+            attach_status=s_fields.VolumeAttachStatus.ATTACHING,
+            volume_id=self.id,
+            attach_mode=attach_mode,
+            instance_uuid=instance_uuid,
+            instance_host=instance_host,
+            logical_instance_id=logical_instance_id)
+        attachment.create()
+        return attachment
+
+    def finish_detach(self, attachment_id):
+        with self.obj_as_admin():
+            volume_updates, attachment_updates = (
+                db.volume_detached(self._context, self.id, attachment_id))
+        # Remove attachment in volume only when this field is loaded.
+        if attachment_updates and self.obj_attr_is_set('volume_attachment'):
+            for i, attachment in enumerate(self.volume_attachment):
+                if attachment.id == attachment_id:
+                    del self.volume_attachment.objects[i]
+                    break
+
+        self.update(volume_updates)
+        self.obj_reset_changes(
+            list(volume_updates.keys()) +
+            ['volume_attachment'])
 
 
 @base.SGServiceObjectRegistry.register

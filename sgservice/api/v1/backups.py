@@ -14,7 +14,6 @@
 
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 import webob
 
 from sgservice.api import common
@@ -81,6 +80,7 @@ class BackupViewBuilder(common.ViewBuilder):
             'backup_record': {
                 'driver_data': export['driver_data'],
                 'backup_type': export['backup_type'],
+                'backup_size': export['backup_size'],
                 'availability_zone': export['availability_zone']
             },
         }

@@ -17,8 +17,6 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 
 from sgservice.controller.sgdriver import SGDriver
-from sgservice import exception
-from sgservice.i18n import _
 from sgservice.objects import fields
 
 sg_client_opts = [

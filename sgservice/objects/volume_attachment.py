@@ -15,10 +15,10 @@
 from oslo_versionedobjects import fields
 
 from sgservice import db
-from sgservice import objects
-from sgservice.objects import base
 from sgservice import exception
 from sgservice.i18n import _
+from sgservice import objects
+from sgservice.objects import base
 
 
 @base.SGServiceObjectRegistry.register
@@ -35,13 +35,14 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
         'id': fields.UUIDField(),
         'volume_id': fields.UUIDField(),
         'instance_uuid': fields.UUIDField(nullable=True),
-        'attached_host': fields.StringField(nullable=True),
+        'instance_host': fields.StringField(nullable=True),
         'mountpoint': fields.StringField(nullable=True),
 
         'attach_time': fields.DateTimeField(nullable=True),
         'detach_time': fields.DateTimeField(nullable=True),
         'attach_status': fields.StringField(nullable=True),
         'attach_mode': fields.StringField(nullable=True),
+        'logical_instance_id': fields.StringField(nullable=True),
 
         'volume': fields.ObjectField('Volume', nullable=False),
     }
@@ -103,12 +104,10 @@ class VolumeAttachment(base.SGServicePersistentObject, base.SGServiceObject,
             db.volume_attachment_update(self._context, self.id, updates)
             self.obj_reset_changes()
 
-    def finish_attach(self, instance_uuid, host_name, mount_point,
-                      attach_mode='rw'):
+    def finish_attach(self, mount_point):
         with self.obj_as_admin():
             db_volume, updated_values = db.volume_attached(
-                self._context, self.id, instance_uuid,
-                host_name, mount_point, attach_mode)
+                self._context, self.id, mount_point)
         self.update(updated_values)
         self.obj_reset_changes(updated_values.keys())
         return objects.Volume._from_db_object(self._context,

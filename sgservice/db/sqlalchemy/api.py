@@ -27,7 +27,6 @@ from oslo_db.sqlalchemy import session as db_session
 from oslo_db.sqlalchemy import utils as sqlalchemyutils
 from oslo_log import log as logging
 from oslo_utils import timeutils
-from oslo_utils import uuidutils
 from sqlalchemy.orm import joinedload
 from sqlalchemy.sql.expression import literal_column
 from sqlalchemy.sql import func
@@ -1020,8 +1019,7 @@ def volume_attach(context, values):
 
 
 @require_admin_context
-def volume_attached(context, attachment_id, instance_uuid, host_name,
-                    mountpoint, attach_mode='rw'):
+def volume_attached(context, attachment_id, mountpoint):
     """This method updates a volume attachment entry.
 
         This function saves the information related to a particular
@@ -1029,29 +1027,25 @@ def volume_attached(context, attachment_id, instance_uuid, host_name,
         to mark the volume as attached.
 
         """
-    if instance_uuid and not uuidutils.is_uuid_like(instance_uuid):
-        raise exception.InvalidUUID(uuid=instance_uuid)
-
     session = get_session()
     with session.begin():
         volume_attachment_ref = volume_attachment_get(context, attachment_id,
                                                       session=session)
 
-        volume_attachment_ref['mountpoint'] = mountpoint
-        volume_attachment_ref['attach_status'] = 'attached'
-        volume_attachment_ref['instance_uuid'] = instance_uuid
-        volume_attachment_ref['attached_host'] = host_name
-        volume_attachment_ref['attach_time'] = timeutils.utcnow()
-        volume_attachment_ref['attach_mode'] = attach_mode
+        attachment_updates = {
+            'mountpoint': mountpoint,
+            'attach_status': 'attached',
+            'attach_time': timeutils.utcnow()
+        }
 
         volume_ref = _volume_get(context, volume_attachment_ref['volume_id'],
                                  session=session)
-        volume_attachment_ref.save(session=session)
+        volume_attachment_ref.update(attachment_updates)
 
         volume_ref['status'] = 'in-use'
         volume_ref['attach_status'] = 'attached'
         volume_ref.save(session=session)
-        return volume_ref
+        return volume_ref, attachment_updates
 
 
 @require_context
@@ -1083,7 +1077,7 @@ def volume_attachment_get_all_by_host(context, volume_id, host):
         result = model_query(context, models.VolumeAttachment,
                              session=session). \
             filter_by(volume_id=volume_id). \
-            filter_by(attached_host=host). \
+            filter_by(instance_host=host). \
             filter(models.VolumeAttachment.attach_status != 'detached'). \
             all()
         return result
@@ -1125,6 +1119,7 @@ def volume_detached(context, volume_id, attachment_id):
         """
     session = get_session()
     with session.begin():
+        attachment_updates = None
         attachment = None
         try:
             attachment = volume_attachment_get(context, attachment_id,
@@ -1135,11 +1130,17 @@ def volume_detached(context, volume_id, attachment_id):
         # If this is already detached, attachment will be None
         if attachment:
             now = timeutils.utcnow()
-            attachment['attach_status'] = 'detached'
-            attachment['detach_time'] = now
-            attachment['deleted'] = True
-            attachment['deleted_at'] = now
+            attachment_updates = {
+                'attach_status': fields.VolumeAttachStatus.DETACHED,
+                'detach_time': now,
+                'deleted': True,
+                'deleted_at': now,
+                'updated_at':
+                    literal_column('updated_at'),
+            }
+            attachment.update(attachment_updates)
             attachment.save(session=session)
+            del attachment_updates['updated_at']
 
         attachment_list = volume_attachment_get_all_by_volume_id(
             context, volume_id, session=session)
@@ -1148,15 +1149,20 @@ def volume_detached(context, volume_id, attachment_id):
             remain_attachment = True
 
         volume_ref = _volume_get(context, volume_id, session=session)
+        volume_updates = {'updated_at': literal_column('updated_at')}
         if not remain_attachment:
-            volume_ref['status'] = 'enabled'
-            volume_ref['attach_status'] = 'detached'
-            volume_ref.save(session=session)
+            volume_updates['status'] = 'enabled'
+            volume_updates['attach_status'] = 'detached'
+            volume_updates['driver_data'] = None
         else:
             # Volume is still attached
-            volume_ref['status'] = 'in-use'
-            volume_ref['attach_status'] = 'attached'
-            volume_ref.save(session=session)
+            volume_updates['status'] = 'in-use'
+            volume_updates['attach_status'] = 'attached'
+
+        volume_ref.update(volume_updates)
+        volume_ref.save(session=session)
+        del volume_updates['updated_at']
+        return volume_updates, attachment_updates
 
 
 @handle_db_data_error

@@ -136,8 +136,9 @@ class Volume(BASE, SGServiceBase):
     replicate_status = Column(String(64))
     replicate_mode = Column(String(64))
     access_mode = Column(String(64))
-    driver_data = Column(Text)
+    driver_data = Column(Text, nullable=True)
     snapshot_id = Column(String(36), nullable=True)
+    sg_client = Column(Text, nullable=True)
 
     @property
     def name(self):
@@ -161,6 +162,8 @@ class Snapshot(BASE, SGServiceBase):
     availability_zone = Column(String(255))
     replication_zone = Column(String(255))
     volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
+    volume_size = Column(Integer)
+    sg_client = Column(Text, nullable=True)
 
     volume = orm.relationship(
         Volume,
@@ -199,6 +202,7 @@ class Backup(BASE, SGServiceBase):
     num_dependent_backups = Column(Integer)
     data_timestamp = Column(DateTime)
     restore_volume_id = Column(String(36), nullable=True)
+    sg_client = Column(Text, nullable=True)
 
     @property
     def name(self):
@@ -213,12 +217,13 @@ class VolumeAttachment(BASE, SGServiceBase):
     id = Column(String(36), primary_key=True, nullable=False)
     volume_id = Column(String(36), ForeignKey('volumes.id'), nullable=False)
     instance_uuid = Column(String(36))
-    attached_host = Column(String(255))
+    instance_host = Column(String(255))
     mountpoint = Column(String(255))
     attach_time = Column(DateTime)
     detach_time = Column(DateTime)
     attach_status = Column(String(255))
     attach_mode = Column(String(255))
+    logical_instance_id = Column(String(36))
 
     volume = orm.relationship(
         Volume,

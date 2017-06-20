@@ -16,7 +16,6 @@ import os
 import re
 import six
 
-from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import strutils
