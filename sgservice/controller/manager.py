@@ -34,6 +34,7 @@ from sgservice.i18n import _, _LE, _LI
 from sgservice import manager
 from sgservice import objects
 from sgservice.objects import fields
+from sgservice import utils
 
 controller_manager_opts = [
     cfg.IntOpt('sync_status_interval',
@@ -189,24 +190,28 @@ class ControllerManager(manager.Manager):
             if volume.sg_client is None:
                 volume.update({'sg_client': sg_client.dumps()})
                 volume.save()
-            if cinder_volume.status in ['available', 'attaching']:
-                if cinder_volume.status == 'available':
-                    self._attach_volume_to_sg(context, logical_volume_id,
-                                              sg_client)
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'in-use')
-            if (cinder_volume.status == 'in-use'
-                and len(cinder_volume.attachments) == 1
-                and cinder_volume.attachments[0]['server_id']
+            if cinder_volume.status == 'available':
+                return self.enable_sg(context, volume.id)
+            elif (cinder_volume.status == 'in-use'
+                  and len(cinder_volume.attachments) == 1
+                  and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
-                mountpoint = cinder_volume.attachments[0]['device']
-                device = self._get_attach_device(sg_client, mountpoint)
-                self.driver.enable_sg(sg_client, volume, device)
-                self._finish_enable_sg(SYNC_SUCCEED, volume)
-            else:
-                self._finish_enable_sg(SYNC_FAILED, volume)
+                driver_volume = self.driver.get_volume(sg_client, volume)
+                if driver_volume['status'] == fields.VolumeStatus.ENABLED:
+                    return self._finish_enable_sg(SYNC_SUCCEED, volume)
+            elif (cinder_volume.status == 'attaching'
+                  and len(cinder_volume.attachments) == 1
+                  and cinder_volume.attachments[0]['server_id']
+                    == sg_client.instance):
+                self._wait_cinder_volume_status(
+                    cinder_client, logical_volume_id, 'in-use')
+                # as we can't get the real mountpoint in sg-client,
+                # set enable failed
+                return self._finish_enable_sg(SYNC_FAILED, volume)
+            # TODO(smile-luobin): other status
+            return self._finish_enable_sg(SYNC_FAILED, volume)
         except Exception:
-            self._finish_enable_sg(SYNC_FAILED, volume)
+            return self._finish_enable_sg(SYNC_FAILED, volume)
 
     def _init_deleting_volume(self, context, volume):
         if 'logicalVolumeId' in volume.metadata:
@@ -217,27 +222,25 @@ class ControllerManager(manager.Manager):
             cinder_client = self._create_cinder_client(context)
             cinder_volume = cinder_client.volumes.get(logical_volume_id)
             sg_client = SGClientObject(volume.sg_client)
-            if (cinder_volume.status in ['in-use', 'detaching']
+            if (cinder_volume.status == 'in-use'
                 and len(cinder_volume.attachments) == 1
                 and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
-                if cinder_volume.status == 'in-use':
-                    driver_volume = self.driver.get_volume(sg_client, volume)
-                    LOG.info(_LI('driver_volume info:%s'), driver_volume)
-                    if driver_volume['status'] != fields.VolumeStatus.DELETED:
-                        self.driver.disable_sg(sg_client, volume)
-                    self._detach_volume_from_sg(context, logical_volume_id,
-                                                sg_client)
+                return self.disable_sg(context, volume.id)
+            elif (cinder_volume.status == 'detaching'
+                    and len(cinder_volume.attachments) == 1
+                    and cinder_volume.attachments[0]['server_id']
+                    == sg_client.instance):
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
                 if cinder_volume.status == 'available':
-                    self._finish_delete_volume(SYNC_SUCCEED, volume)
+                    return self._finish_delete_volume(SYNC_SUCCEED, volume)
                 else:
-                    self._finish_delete_volume(SYNC_FAILED, volume)
+                    return self._finish_delete_volume(SYNC_FAILED, volume)
             elif cinder_volume.status == 'available':
-                self._finish_delete_volume(SYNC_SUCCEED, volume)
-            else:
-                self._finish_delete_volume(SYNC_FAILED, volume)
+                return self._finish_delete_volume(SYNC_SUCCEED, volume)
+            # TODO(smile-luobin): other status
+            return self._finish_delete_volume(SYNC_FAILED, volume)
         except cinder_exc.NotFound:
             self._finish_delete_volume(SYNC_SUCCEED, volume)
         except Exception:
@@ -256,52 +259,32 @@ class ControllerManager(manager.Manager):
             sg_client = SGClientObject(volume.sg_client)
             cinder_client = self._create_cinder_client(context)
             cinder_volume = cinder_client.volumes.get(logical_volume_id)
-            # cinder volume still creating
+            # cinder volume still is creating or available
             if cinder_volume.status in ['creating', 'available']:
-                if cinder_volume.status == 'available':
-                    driver_volume = self.driver.query_volume_from_snapshot(
-                        sg_client, volume)
-                    if driver_volume['status'] == fields.VolumeStatus.ENABLED:
-                        self._finish_create_volume(SYNC_SUCCEED, volume,
-                                                   snapshot)
-                        return
-                self._do_create_volume(context, snapshot, volume)
-            # cinder volume is in-use or attaching
-            # cinder volume is in-use or attaching
-            elif cinder_volume.status in ['attaching', 'in-use']:
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'in-use')
-                # cinder volume already attach to sg_client
-                if (cinder_volume.status == 'in-use'
+                return self.create_volume(context, snapshot.id, volume.id)
+            elif (cinder_volume.status in ['in-use', 'attaching']
                     and len(cinder_volume.attachments) == 1
                     and cinder_volume.attachments[0]['server_id']
-                        == sg_client.instance):
-                    mountpoint = cinder_volume.attachments[0]['device']
-                    # copy snapshot to device
-                    device = self._get_attach_device(sg_client, mountpoint)
-                    driver_volume = self.driver.query_volume_from_snapshot(
-                        sg_client, volume.id)
-                    if driver_volume['status'] == fields.VolumeStatus.DELETED:
-                        self.driver.create_volume_from_snapshot(
-                            sg_client, snapshot, volume.id, device)
-                    # wait vol available
-                    self._wait_vols_from_snap(volume)
-                    self._finish_create_volume(SYNC_SUCCEED, volume, snapshot)
-                else:
-                    self._finish_create_volume(SYNC_FAILED, volume, snapshot)
-            # cinder volume detach from sg_client
-            elif (cinder_volume.status == 'detaching'
-                  and len(cinder_volume.attachments) == 1
-                  and cinder_volume.attachments[0]['server_id']
+                    == sg_client.instance):
+                self._wait_cinder_volume_status(
+                    cinder_client, logical_volume_id, 'in-use')
+                # as we can't get the real mountpoint, set create failed
+                return self._finish_create_volume(SYNC_FAILED,
+                                                  volume, snapshot)
+            elif (cinder_volume.status in ['detaching']
+                    and len(cinder_volume.attachments) == 1
+                    and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
-                if cinder_volume.status == 'available':
-                    self._finish_create_volume(SYNC_SUCCEED, volume, snapshot)
+                if cinder_volume.status == "available":
+                    return self._finish_create_volume(SYNC_SUCCEED,
+                                                      volume, snapshot)
                 else:
-                    self._finish_create_volume(SYNC_FAILED, volume, snapshot)
-            else:
-                self._finish_create_volume(SYNC_FAILED, volume, snapshot)
+                    return self._finish_create_volume(SYNC_FAILED, volume,
+                                                      snapshot)
+            # TODO(smile-luobin): other status
+            return self._finish_create_volume(SYNC_FAILED, volume, snapshot)
         except Exception:
             self._finish_create_volume(SYNC_FAILED, volume, snapshot)
 
@@ -314,60 +297,109 @@ class ControllerManager(manager.Manager):
             volume.update({'sg_client': backup.sg_client})
             volume.save()
         try:
+            sg_client = SGClientObject(volume.sg_client)
             cinder_client = self._create_cinder_client(context)
             cinder_volume = cinder_client.volumes.get(logical_volume_id)
-            sg_client = SGClientObject(volume.sg_client)
-            # cinder volume still not attach to sg_client
+            # cinder volume still available
             if cinder_volume.status == 'available':
-                self._do_restore_backup(context, backup, volume)
-            # cinder volume already attached to sg_client
-            elif cinder_volume.status == 'attaching':
-                self._attach_volume_to_sg(context, logical_volume_id,
-                                          sg_client)
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'in-use')
-            if (cinder_volume.status == 'in-use'
-                and len(cinder_volume.attachments) == 1
-                and cinder_volume.attachments[0]['server_id']
+                return self._do_restore_backup(context, backup, volume)
+            elif (cinder_volume.status in ['in-use', 'attaching']
+                    and len(cinder_volume.attachments) == 1
+                    and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
-                mountpoint = cinder_volume.attachments[0]['device']
-                device = self._get_attach_device(sg_client, mountpoint)
-                # TODO(luobin): current restore is a synchronization function
-                self.driver.restore_backup(sg_client, backup, volume, device)
-                self._detach_volume_from_sg(context, logical_volume_id,
-                                            sg_client)
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'available')
-            if (cinder_volume.status == 'detaching'
+                self._wait_cinder_volume_status(
+                    cinder_client, logical_volume_id, 'in-use')
+                # as we can't get the real mountpoint, set restore failed
+                return self._finish_restore_backup(SYNC_FAILED, backup, volume)
+            elif (cinder_volume.status in ['detaching']
                     and len(cinder_volume.attachments) == 1
                     and cinder_volume.attachments[0]['server_id']
                     == sg_client.instance):
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, logical_volume_id, 'available')
-                if cinder_volume.status == 'available':
-                    self._finish_restore_backup(SYNC_SUCCEED, backup, volume)
+                if cinder_volume.status == "available":
+                    return self._finish_restore_backup(SYNC_SUCCEED, backup,
+                                                       volume)
                 else:
-                    self._finish_restore_backup(SYNC_FAILED, backup, volume)
-            else:
-                self._finish_restore_backup(SYNC_FAILED, backup, volume)
+                    return self._finish_restore_backup(SYNC_FAILED, backup,
+                                                       volume)
+            # TODO(smile-luobin): other status
+            return self._finish_restore_backup(SYNC_FAILED, backup, volume)
         except Exception:
             self._finish_restore_backup(SYNC_FAILED, backup, volume)
 
     def _init_attaching_volume(self, context, volume):
         attachment = objects.VolumeAttachmentList.get_all_by_volume_id(
             context, volume.id)[-1]
-        if CONF.sg_client.sg_client_mode == 'iscsi':
+        if CONF.sg_client.sg_client_mode == constants.ISCSI_MODE:
             self._do_iscsi_attach_volume(volume, attachment)
         else:
-            self._redo_agent_attach_volume(context, volume, attachment)
+            if 'logicalVolumeId' in volume.metadata:
+                logical_volume_id = volume.metadata['logicalVolumeId']
+            else:
+                logical_volume_id = volume.id
+            cinder_client = self._create_cinder_client(context)
+            cinder_volume = cinder_client.volumes.get(logical_volume_id)
+            sg_client = SGClientObject(volume.sg_client)
+            if (sg_client.instance == CONF.sg_client.sg_client_instance
+                    and cinder_volume.status == 'available'):
+                return self._do_agent_attach_volume(context, volume,
+                                                    attachment)
+            elif cinder_volume.status in 'attaching':
+                self._wait_cinder_volume_status(cinder_client,
+                                                logical_volume_id, 'in-use')
+            elif cinder_volume.status == 'detaching':
+                self._wait_cinder_volume_status(cinder_client,
+                                                logical_volume_id, 'available')
+            # other status, we can't get real mountpoint, set attach failed
+            return self._finish_attach_volume(SYNC_FAILED, volume, attachment)
 
     def _init_detaching_volume(self, context, volume):
         attachment = objects.VolumeAttachmentList.get_all_by_volume_id(
             context, volume.id)[-1]
-        if CONF.sg_client.sg_client_mode == 'iscsi':
+        if CONF.sg_client.sg_client_mode == constants.ISCSI_MODE:
             self._do_iscsi_detach_volume(volume, attachment)
         else:
-            self._redo_agent_detach_volume(context, volume, attachment)
+            if 'logicalVolumeId' in volume.metadata:
+                logical_volume_id = volume.metadata['logicalVolumeId']
+            else:
+                logical_volume_id = volume.id
+            cinder_client = self._create_cinder_client(context)
+            cinder_volume = cinder_client.volumes.get(logical_volume_id)
+            sg_client = SGClientObject(volume.sg_client)
+            if sg_client.instance == attachment.logical_instance_id:
+                if cinder_volume.status == 'in-use':
+                    return self._do_agent_detach_volume(context, volume,
+                                                        attachment)
+                elif cinder_volume.status in ['in-use', 'detaching']:
+                    if cinder_volume.status == 'in-use':
+                        self._detach_volume_from_sg(context, logical_volume_id,
+                                                    sg_client)
+                    cinder_volume = self._wait_cinder_volume_status(
+                        cinder_client, logical_volume_id, 'available')
+                elif cinder_volume.status != 'available':
+                    # TODO(smile-luobin): other status
+                    return self._finish_detach_volume(SYNC_FAILED, volume,
+                                                      attachment)
+            sg_client = SGClientObject()
+            if sg_client.dumps() != volume.sg_client:
+                volume.update({'sg_client': sg_client.dumps()})
+                volume.save()
+            if cinder_volume.status == 'available':
+                device = self._attach_volume_to_sg(
+                    context, logical_volume_id, sg_client)
+                self.driver.terminate_connection(
+                    sg_client, volume, constants.AGENT_MODE, device)
+            elif cinder_volume.status == 'attaching':
+                self._wait_cinder_volume_status(
+                    cinder_client, logical_volume_id, 'in-use')
+                # as we can't get the real mountpoint, set detach failed
+                return self._finish_detach_volume(
+                    SYNC_FAILED, volume, attachment, fields.VolumeStatus.ERROR)
+            # other status
+            else:
+                return self._finish_detach_volume(
+                    SYNC_FAILED, volume, attachment, fields.VolumeStatus.ERROR)
 
     def _init_replicates(self, context):
         volumes = objects.VolumeList.get_all(context)
@@ -421,15 +453,31 @@ class ControllerManager(manager.Manager):
             return nova.get_project_context_client(context)
 
     def _attach_volume_to_sg(self, context, volume_id, sg_client):
-        """Attach volume to sg-client and get mountpoint"""
-        try:
-            nova_client = self._create_nova_client(context)
-            volume_attachment = nova_client.volumes.create_server_volume(
-                sg_client.instance, volume_id)
-            return volume_attachment.device
-        except Exception as err:
-            LOG.error(err)
-            raise exception.AttachSGFailed(reason=err)
+        """ Attach volume to sg-client and get mountpoint
+        """
+        @utils.synchronized(sg_client.instance)
+        def _do_attach_volume(context, volume_id, sg_client):
+            try:
+                old_devices = self.driver.list_devices(sg_client)
+                LOG.info(_LI("old devices: %s"), old_devices)
+                nova_client = self._create_nova_client(self.admin_context)
+                nova_client.volumes.create_server_volume(sg_client.instance,
+                                                         volume_id)
+                cinder_client = self._create_cinder_client(context)
+                cinder_volume = self._wait_cinder_volume_status(
+                    cinder_client, volume_id, 'in-use')
+                if cinder_volume.status != 'in-use':
+                    raise Exception(_LE("attach volume to sg failed"))
+                new_devices = self.driver.list_devices(sg_client)
+                LOG.info(_LI("new devices: %s"), new_devices)
+                added_devices = [device for device in new_devices
+                                 if device not in old_devices]
+                return added_devices[0]
+            except Exception as err:
+                LOG.error(err)
+                raise exception.AttachSGFailed(reason=err)
+
+        return _do_attach_volume(context, volume_id, sg_client)
 
     def _sync_backups(self):
         for backup_id, backup_info in self.sync_backups.items():
@@ -465,7 +513,7 @@ class ControllerManager(manager.Manager):
                 else:
                     self._finish_create_backup(SYNC_FAILED, volume, backup)
             elif action == 'restore':
-                # TODO(luobin)
+                # TODO(luobin): current restore backup is synchronized func
                 pass
             self.sync_backups.pop(backup_id)
 
@@ -569,35 +617,24 @@ class ControllerManager(manager.Manager):
                                                    driver_volume)
             self.sync_replicates.pop(volume_id)
 
-    def _get_attach_device(self, sg_client, mountpoint):
-        try:
-            devices = self.driver.list_devices(sg_client)
-            device = [d for d in devices if d[-1] == mountpoint[-1]]
-            if len(device) == 0:
-                msg = _("Get volume device failed")
-                LOG.error(msg)
-                raise exception.AttachSGFailed(reason=msg)
-            elif len(device) > 1:
-                device = [d for d in devices if d[-2] == mountpoint[-2]]
-                if len(device) == 0:
-                    msg = _("Get volume device failed")
-                    LOG.error(msg)
-                    raise exception.AttachSGFailed(reason=msg)
-            return device[0]
-        except exception.SGDriverError as err:
-            msg = (_("call list-devices to sg-client failed, err: %s."), err)
-            LOG.error(msg)
-            raise err
-
+    # detach volume from sg-client
     def _detach_volume_from_sg(self, context, volume_id, sg_client):
-        # detach volume from sg-client
-        try:
-            nova_client = self._create_nova_client(context)
-            nova_client.volumes.delete_server_volume(sg_client.instance,
-                                                     volume_id)
-        except Exception as err:
-            LOG.error(err)
-            raise exception.DetachSGFailed(reason=err)
+        @utils.synchronized(sg_client.instance)
+        def _do_detach_volume(context, volume_id, sg_client):
+            try:
+                nova_client = self._create_nova_client(self.admin_context)
+                nova_client.volumes.delete_server_volume(sg_client.instance,
+                                                         volume_id)
+                cinder_client = self._create_cinder_client(context)
+                cinder_volume = self._wait_cinder_volume_status(
+                    cinder_client, volume_id, 'available')
+                if cinder_volume != 'available':
+                    raise Exception(_LE("detach volume from sg failed"))
+            except Exception as err:
+                LOG.error(err)
+                raise exception.DetachSGFailed(reason=err)
+
+        _do_detach_volume(context, volume_id, sg_client)
 
     def _sync_vols_from_snap(self):
         for volume_id, volume_info in self.sync_vols_from_snap.items():
@@ -647,16 +684,8 @@ class ControllerManager(manager.Manager):
         try:
             # attach cinder volume to sg_client
             sg_client = SGClientObject(volume.sg_client)
-            cinder_client = self._create_cinder_client(context)
-            self._attach_volume_to_sg(context, logical_volume_id, sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._finish_enable_sg(SYNC_FAILED, volume)
-                return
-            mountpoint = cinder_volume.attachments[0]['device']
-            # enable sg in sg_client
-            device = self._get_attach_device(sg_client, mountpoint)
+            device = self._attach_volume_to_sg(context, logical_volume_id,
+                                               sg_client)
             self.driver.enable_sg(sg_client, volume, device)
             self._finish_enable_sg(SYNC_SUCCEED, volume)
         except Exception:
@@ -701,12 +730,7 @@ class ControllerManager(manager.Manager):
                         == sg_client.instance):
                     self._detach_volume_from_sg(context, logical_volume_id,
                                                 sg_client)
-                    cinder_volume = self._wait_cinder_volume_status(
-                        cinder_client, logical_volume_id, 'available')
-                    if cinder_volume.status != 'available':
-                        self._finish_delete_volume(SYNC_FAILED, volume)
-                    else:
-                        self._finish_delete_volume(SYNC_SUCCEED, volume)
+                    self._finish_delete_volume(SYNC_SUCCEED, volume)
                 else:
                     self._finish_delete_volume(SYNC_SUCCEED, volume)
             else:
@@ -738,55 +762,37 @@ class ControllerManager(manager.Manager):
             logical_volume_id = volume.metadata['logicalVolumeId']
         else:
             logical_volume_id = volume.id
-        # detach from system sg_client
         try:
-            cinder_client = self._create_cinder_client(context)
+            # step 1: call initialize_connection request to sg-client
+            LOG.debug(_LI("call initialize connection request"))
             sg_client = SGClientObject(volume.sg_client)
             self.driver.initialize_connection(sg_client, volume,
                                               constants.AGENT_MODE)
-            # detach from system sg_client
+            # step 2: detach from system sg_client
+            LOG.debug(_LI('detach volume from system sg-client'))
             self._detach_volume_from_sg(context, logical_volume_id,
                                         sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'available')
-            if cinder_volume.status != 'available':
-                self._rollback_agent_attach_volume(context, volume, attachment)
-                return
-        except Exception as err:
-            LOG.error(_LE("attach agent mode volume failed, err:%s"), err)
-            self._rollback_agent_attach_volume(context, volume, attachment)
-            return
-        # attach to guest sg_client
-        try:
+            # step 3: attach volume to guest vm
+            LOG.debug(_LI('attach volume to guest vm'))
             instance_id = attachment.logical_instance_id
             instance_host = attachment.instance_host
             sg_client = SGClientObject(instance=instance_id,
                                        host=instance_host)
             volume.update({'sg_client': sg_client.dumps()})
             volume.save()
-            self._attach_volume_to_sg(context, logical_volume_id, sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._rollback_agent_attach_volume(context, volume, attachment)
-        except Exception as err:
-            LOG.error(_LE("attach agent mode volume failed, err:%s"), err)
-            self._rollback_agent_attach_volume(context, volume, attachment)
-            return
-        # attach volume in guest sg_client
-        try:
-            mountpoint = cinder_volume.attachments[0]['device']
-            device = self._get_attach_device(sg_client, mountpoint)
+            device = self._attach_volume_to_sg(context, logical_volume_id,
+                                               sg_client)
+            # step 4: call attach volume request to sg-client
             self.driver.attach_volume(sg_client, volume, device)
             driver_data = {'driver_type': constants.AGENT_MODE}
             volume.update({'driver_data': jsonutils.dumps(driver_data)})
             volume.save()
-            self._finish_attach_volume(SYNC_SUCCEED, volume, attachment,
-                                       device)
+            return self._finish_attach_volume(SYNC_SUCCEED, volume, attachment,
+                                              device)
         except Exception as err:
             LOG.error(_LE("attach agent mode volume failed, err:%s"), err)
-            self._rollback_agent_attach_volume(context, volume, attachment)
-            return
+            return self._rollback_agent_attach_volume(context, volume,
+                                                      attachment)
 
     def _do_iscsi_attach_volume(self, volume, attachment):
         # initialize connection
@@ -796,23 +802,23 @@ class ControllerManager(manager.Manager):
                 sg_client, volume, constants.ISCSI_MODE)
         except Exception as err:
             LOG.error(_LE("attach iscsi mode volume failed, err:%s"), err)
-            self._finish_attach_volume(SYNC_FAILED, volume, attachment,
-                                       status=fields.VolumeStatus.ENABLED)
-            return
+            return self._finish_attach_volume(
+                SYNC_FAILED, volume, attachment,
+                status=fields.VolumeStatus.ENABLED)
         # use iscsi agent attach volume
         try:
             instance_host = attachment.instance_host
             sgs_agent = AgentClient(instance_host, CONF.sgs_agent_port)
-            resp = sgs_agent.connect_volume(connection_info)
-            mountpoint = resp['mountpoint']
+            mountpoint = sgs_agent.connect_volume(connection_info)[
+                'mountpoint']
         except Exception as err:
             LOG.error(_LE("attach iscsi mode volume failed, err:%s"), err)
             # terminate connection rollback attach
             self.driver.terminate_connection(sg_client, volume,
                                              constants.ISCSI_MODE)
-            self._finish_attach_volume(SYNC_FAILED, volume, attachment,
-                                       status=fields.VolumeStatus.ENABLED)
-            return
+            return self._finish_attach_volume(
+                SYNC_FAILED, volume, attachment,
+                status=fields.VolumeStatus.ENABLED)
 
         driver_data = {'driver_type': constants.ISCSI_MODE,
                        'connection_info': connection_info}
@@ -822,10 +828,6 @@ class ControllerManager(manager.Manager):
                                    mountpoint=mountpoint)
 
     def _rollback_agent_attach_volume(self, context, volume, attachment):
-        self._redo_agent_detach_volume(context, volume, attachment)
-
-    # used to redo detach-volume or rollback attach-volume
-    def _redo_agent_detach_volume(self, context, volume, attachment):
         if 'logicalVolumeId' in volume.metadata:
             logical_volume_id = volume.metadata['logicalVolumeId']
         else:
@@ -835,51 +837,54 @@ class ControllerManager(manager.Manager):
             cinder_client = self._create_cinder_client(context)
             cinder_volume = cinder_client.volumes.get(logical_volume_id)
             if sg_client.instance == attachment.logical_instance_id:
+                # attach failed in step 4;
                 if cinder_volume.status == 'in-use':
                     self.driver.detach_volume(sg_client, volume)
                     self._detach_volume_from_sg(context, logical_volume_id,
                                                 sg_client)
                     cinder_volume = cinder_client.volumes.get(
                         logical_volume_id)
-                if cinder_volume.status == 'detaching':
-                    cinder_volume = self._wait_cinder_volume_status(
-                        cinder_client, logical_volume_id, 'available')
-                if cinder_volume.status != 'available':
-                    self._finish_detach_volume(SYNC_FAILED, volume, attachment)
-                    return
+                # attach failed in step 3 and can't rollback; set error
+                elif cinder_volume.status != 'available':
+                    return self._finish_attach_volume(SYNC_FAILED, volume,
+                                                      attachment)
                 sg_client = SGClientObject()
                 volume.update({'sg_client': sg_client.dumps()})
                 volume.save()
+            # attach failed in step3 and rollback
             if cinder_volume.status == 'available':
-                self._attach_volume_to_sg(context, logical_volume_id,
-                                          sg_client)
-                cinder_volume = cinder_client.volumes.get(logical_volume_id)
-            if cinder_volume.status == 'attaching':
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._finish_detach_volume(SYNC_FAILED, volume, attachment)
-            else:
-                #  agent: terminate conection
-                mountpoint = cinder_volume.attachments[0]['device']
-                device = self._get_attach_device(sg_client, mountpoint)
+                device = self._attach_volume_to_sg(context, logical_volume_id,
+                                                   sg_client)
                 self.driver.terminate_connection(
                     sg_client, volume, constants.AGENT_MODE, device)
-                self._finish_detach_volume(SYNC_SUCCEED, volume, attachment)
+                return self._finish_attach_volume(
+                    SYNC_FAILED, volume, attachment,
+                    fields.VolumeStatus.ENABLED)
+            # attach failed in step 2 and rollback; or step 1;
+            elif cinder_volume.status == 'in-use':
+                self.driver.terminate_connection(
+                    sg_client, volume, constants.AGENT_MODE)
+                return self._finish_attach_volume(
+                    SYNC_FAILED, volume, attachment,
+                    fields.VolumeStatus.ENABLED)
+            # attach failed in step 2 and can't rollback, set error
+            else:
+                return self._finish_attach_volume(SYNC_FAILED, volume,
+                                                  attachment)
         except Exception as err:
-            LOG.info(_LI("redo detach agent volume faile, err:%s"), err)
-            self._finish_detach_volume(SYNC_FAILED, volume, attachment)
+            LOG.error(_LE("rollback agent attach volume failed, error:%s"),
+                      err)
+            self._finish_attach_volume(SYNC_FAILED, volume, attachment)
 
     def _finish_attach_volume(self, sync_result, volume, attachment,
                               mountpoint=None,
-                              status=fields.VolumeStatus.ERROR):
+                              status=fields.VolumeStatus.ERROR_ATTACHING):
         if sync_result == SYNC_SUCCEED:
             LOG.info(_LI("attach volume:%s succeed"), volume.id)
             attachment.finish_attach(mountpoint)
         else:
             LOG.info(_LI("attach volume:%s failed"), volume.id)
             attachment.destroy()
-            status = status if status else volume.previous_status
             volume.status = status
             volume.save()
 
@@ -920,95 +925,84 @@ class ControllerManager(manager.Manager):
         else:
             logical_volume_id = volume.id
         try:
-            # detach volume in guest vm sg-client
+            # step 1: call detach volume request in guest vm sg-client
             sg_client = SGClientObject(volume.sg_client)
+            LOG.debug(_LI("call detach volume request to sg-client"))
             self.driver.detach_volume(sg_client, volume)
-            # detach volume from guest vm
+            # step 2: detach volume from guest vm
+            LOG.debug(_LE('detach volume from guest vm'))
             self._detach_volume_from_sg(context, logical_volume_id,
                                         sg_client)
-            cinder_client = self._create_cinder_client(context)
-            cinder_volume = self._wait_cinder_volume_status(cinder_client,
-                                                            logical_volume_id,
-                                                            'available')
-            if cinder_volume.status != 'available':
-                self._rollback_agent_detach_volume(context, volume, attachment)
-                return
-            # attach volume to system sg-client
+            # step 3: attach volume to system sg_client
+            LOG.debug(_LE('detach volume from guest vm'))
             sg_client = SGClientObject()
             volume.update({'sg_client': sg_client.dumps()})
             volume.save()
-            self._attach_volume_to_sg(context, logical_volume_id,
-                                      sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._rollback_agent_detach_volume(context, volume, attachment)
-            mountpoint = cinder_volume.attachments[0]['device']
-            device = self._get_attach_device(sg_client, mountpoint)
+            device = self._attach_volume_to_sg(context, logical_volume_id,
+                                               sg_client)
+            # step 4: call terminate connection request in system sg-client
+            LOG.debug(_LE('call terminate connection request to sg-client'))
             self.driver.terminate_connection(sg_client, volume,
                                              constants.AGENT_MODE, device)
             self._finish_detach_volume(SYNC_SUCCEED, volume, attachment)
-        except Exception:
-            self._rollback_agent_detach_volume(context, volume, attachment)
+        except Exception as err:
+            LOG.error(_LE("agent mode detach volume failed, err:%s"), err)
+            return self._rollback_agent_detach_volume(context, volume,
+                                                      attachment)
 
     def _rollback_agent_detach_volume(self, context, volume, attachment):
-        self._redo_agent_attach_volume(context, volume, attachment)
-
-    # used to redo attach volume or rollback detach volume
-    def _redo_agent_attach_volume(self, context, volume, attachment):
         if 'logicalVolumeId' in volume.metadata:
             logical_volume_id = volume.metadata['logicalVolumeId']
         else:
             logical_volume_id = volume.id
-        sg_client = SGClientObject(volume.sg_client)
         try:
+            sg_client = SGClientObject(volume.sg_client)
             cinder_client = self._create_cinder_client(context)
             cinder_volume = cinder_client.volumes.get(logical_volume_id)
             if sg_client.instance == CONF.sg_client.sg_client_instance:
                 if cinder_volume.status == 'in-use':
+                    # detach failed in step 4;
                     self.driver.initialize_connection(
                         sg_client, volume, constants.AGENT_MODE)
-                    self._detach_volume_from_sg(context,
-                                                logical_volume_id, sg_client)
+                    self._detach_volume_from_sg(context, logical_volume_id,
+                                                sg_client)
                     cinder_volume = cinder_client.volumes.get(
                         logical_volume_id)
-                if cinder_volume.status == 'detaching':
-                    cinder_volume = self._wait_cinder_volume_status(
-                        cinder_client, logical_volume_id, 'available')
-                if cinder_volume.status != 'available':
-                    LOG.info(_LI("use nova to detach volume from system "
-                                 "sg-client failed"))
-                    self._finish_attach_volume(SYNC_FAILED, volume, attachment)
+                # detach failed in step 3 and can't rollback, set error
+                elif cinder_volume.status != 'available':
+                    return self._finish_detach_volume(SYNC_FAILED,
+                                                      volume, attachment)
                 instance_id = attachment.logical_instance_id
                 instance_host = attachment.instance_host
                 sg_client = SGClientObject(instance=instance_id,
                                            host=instance_host)
                 volume.update({'sg_client': sg_client.dumps()})
                 volume.save()
+            # detach failed in step 3;
             if cinder_volume.status == 'available':
-                self._attach_volume_to_sg(context, logical_volume_id,
-                                          sg_client)
-                cinder_volume = cinder_client.volumes.get(logical_volume_id)
-            if cinder_volume.status == 'attaching':
-                cinder_volume = self._wait_cinder_volume_status(
-                    cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                LOG.info(_LI("use nova to attach volume to guest vm failed"))
-                self._finish_attach_volume(SYNC_FAILED, volume, attachment)
-            else:
-                mountpoint = cinder_volume.attachments[0]['device']
-                device = self._get_attach_device(sg_client, mountpoint)
+                device = self._attach_volume_to_sg(context, logical_volume_id,
+                                                   sg_client)
                 self.driver.attach_volume(sg_client, volume, device)
                 driver_data = {'driver_type': constants.AGENT_MODE}
                 volume.update({'driver_data': jsonutils.dumps(driver_data)})
-                self._finish_attach_volume(SYNC_SUCCEED, volume, attachment,
-                                           device)
-        except Exception as err:
-            LOG.error(_LE("redo agent attach volume failed, err:%s"), err)
-            self._finish_attach_volume(SYNC_FAILED, volume, attachment)
+                return self._finish_attach_volume(SYNC_SUCCEED, volume,
+                                                  attachment, device)
+            # detach failed in step 1;
+            elif cinder_volume.status == 'in-use':
+                self.driver.attach_volume(sg_client, volume, attachment.device)
+                return self._finish_attach_volume(SYNC_SUCCEED, volume,
+                                                  attachment,
+                                                  attachment.device)
+            # detach failed in step 2 and can't rollback, set error
+            else:
+                return self._finish_detach_volume(SYNC_FAILED,
+                                                  volume, attachment)
+        except Exception:
+            return self._finish_detach_volume(SYNC_FAILED,
+                                              volume, attachment)
 
     def _finish_detach_volume(self, sync_result, volume, attachment,
-                              status=fields.VolumeStatus.ERROR):
+                              status=fields.VolumeStatus.ERROR_DETACHING):
         if sync_result == SYNC_SUCCEED:
             volume.finish_detach(attachment.id)
         else:
@@ -1175,25 +1169,13 @@ class ControllerManager(manager.Manager):
             logical_volume_id = volume.id
         try:
             sg_client = SGClientObject(volume.sg_client)
-            cinder_client = self._create_cinder_client(context)
-            self._attach_volume_to_sg(context, logical_volume_id, sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._finish_restore_backup(SYNC_FAILED, backup, volume)
-                return
-            mountpoint = cinder_volume.attachments[0]['device']
-            device = self._get_attach_device(sg_client, mountpoint)
+            device = self._attach_volume_to_sg(context, logical_volume_id,
+                                               sg_client)
             # TODO(luobin): current restore is a synchronization function
             self.driver.restore_backup(sg_client, backup, volume, device)
             self._detach_volume_from_sg(context, logical_volume_id,
                                         sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'available')
-            if cinder_volume.status == 'available':
-                self._finish_restore_backup(SYNC_SUCCEED, backup, volume)
-            else:
-                self._finish_restore_backup(SYNC_FAILED, backup, volume)
+            self._finish_restore_backup(SYNC_SUCCEED, backup, volume)
         except Exception as err:
             msg = (_LE("Restore backup:%(backup_id)s failed, "
                        "err:%(err)s."),
@@ -1666,31 +1648,15 @@ class ControllerManager(manager.Manager):
                 return
             # attach cinder volume to sg_client
             sg_client = SGClientObject(volume.sg_client)
-            self._attach_volume_to_sg(context, logical_volume_id, sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'in-use')
-            if cinder_volume.status != 'in-use':
-                self._finish_create_volume(SYNC_FAILED, volume, snapshot)
-                return
-            mountpoint = cinder_volume.attachments[0]['device']
-            # copy snapshot to device
-            device = self._get_attach_device(sg_client, mountpoint)
-            driver_volume = self.driver.query_volume_from_snapshot(
-                sg_client, volume.id)
-            if driver_volume['status'] in [fields.VolumeStatus.DELETED,
-                                           fields.VolumeStatus.ERROR]:
-                self.driver.create_volume_from_snapshot(
-                    sg_client, snapshot, volume.id, device)
+            device = self._attach_volume_to_sg(context, logical_volume_id,
+                                               sg_client)
+            self.driver.create_volume_from_snapshot(sg_client, snapshot,
+                                                    volume.id, device)
             # wait vol available
             self._wait_vols_from_snap(volume)
             # detach volume from sg-client
             self._detach_volume_from_sg(context, logical_volume_id, sg_client)
-            cinder_volume = self._wait_cinder_volume_status(
-                cinder_client, logical_volume_id, 'available')
-            if cinder_volume.status != 'available':
-                self._finish_create_volume(SYNC_FAILED, volume, snapshot)
-            else:
-                self._finish_create_volume(SYNC_SUCCEED, volume, snapshot)
+            self._finish_create_volume(SYNC_SUCCEED, volume, snapshot)
         except Exception:
             self._finish_create_volume(SYNC_FAILED, volume, snapshot)
 

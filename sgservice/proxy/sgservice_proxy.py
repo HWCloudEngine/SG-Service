@@ -155,14 +155,24 @@ class SGServiceProxy(manager.Manager):
                                      initial_delay=self.sync_status_interval)
 
     def init_host(self, **kwargs):
-        """list all ing-status objects(volumes, snapshot, backups)"""
+        """ list all ing-status objects(volumes, snapshot, backups);
+            add to self.volumes_mapping_cache, backups_mapping_cache,
+            snapshots_mapping_cache, and replicates_mapping;
+            start looping call to sync volumes, backups, snapshots,
+            and replicates status;
+        """
         filters = {'availability_zone': CONF.availability_zone}
         volumes = objects.VolumeList.get_all(self.admin_context,
                                              filters=filters)
         for volume in volumes:
             if volume.status in VOLUME_STATUS_ACTION_MAPPING.keys():
-                self.sync_volumes[volume.id] = {
-                    'action': VOLUME_STATUS_ACTION_MAPPING[volume.status]}
+                action = VOLUME_STATUS_ACTION_MAPPING[volume.status]
+                self.sync_volumes[volume.id] = {'action': action}
+                if action in ['attach', 'detach']:
+                    attachment = \
+                        objects.VolumeAttachmentList.get_all_by_volume_id(
+                            self.admin_context, volume.id)[-1]
+                    self.sync_volumes[volume.id]['attachment'] = attachment
             if (volume.replicate_status
                     in REPLICATE_STATUS_ACTION_MAPPING.keys()):
                 self.sync_replicates[volume.id] = {
@@ -198,8 +208,8 @@ class SGServiceProxy(manager.Manager):
                         checkpoint.status]}
 
     def _sync_volumes_status(self):
-        """sync cascaded volumes'(in volumes_mapping_cache) status;
-        and update cascading volumes' status
+        """ sync cascaded volumes'(in volumes_mapping_cache) status;
+            and update cascading volumes' status
         """
 
         for volume_id, item in self.sync_volumes.items():

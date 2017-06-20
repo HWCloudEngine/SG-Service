@@ -16,6 +16,7 @@ import os
 import re
 import six
 
+from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import strutils
@@ -26,6 +27,8 @@ from sgservice.i18n import _
 
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
+
+synchronized = lockutils.synchronized_with_prefix('sgs-')
 
 
 def find_config(config_path):

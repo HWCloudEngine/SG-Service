@@ -115,7 +115,9 @@ class API(base.Base):
     def delete(self, context, volume):
         if volume.status not in [fields.VolumeStatus.AVAILABLE,
                                  fields.VolumeStatus.ERROR,
-                                 fields.VolumeStatus.ERROR_RESTORING]:
+                                 fields.VolumeStatus.ERROR_RESTORING,
+                                 fields.VolumeStatus.ERROR_ATTACHING,
+                                 fields.VolumeStatus.ERROR_DETACHING]:
             msg = (_('SG Volume status must be available or error, '
                      'but current is %s.'), volume.status)
             raise exception.InvalidVolume(reason=msg)
