@@ -46,8 +46,8 @@ controller_manager_opts = [
     cfg.IntOpt('retry_attempts',
                default=10),
     cfg.PortOpt('sgs_agent_port',
-                default=8989,
-                help='The port of sgs agent')
+                default=7127,
+                help='The port of sgs agent'),
 ]
 
 sg_client_opts = [
@@ -894,6 +894,10 @@ class ControllerManager(manager.Manager):
         LOG.info(_LI("Attach volume '%(vol_id)s' to '%(instance_id)s'"),
                  {"vol_id": volume_id, "instance_id": instance_uuid})
         volume = objects.Volume.get_by_id(context, volume_id)
+        if attachment.instance_host is None:
+            msg = (_LE("Attach volume failed, can't get instance host"))
+            LOG.error(msg)
+            return self._finish_attach_volume(SYNC_FAILED, volume, attachment)
 
         try:
             if CONF.sg_client.sg_client_mode == 'iscsi':
