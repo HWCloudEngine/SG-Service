@@ -666,13 +666,12 @@ class SGServiceProxy(manager.Manager):
         volume = objects.Volume.get_by_id(context, volume_id)
         attachment = objects.VolumeAttachment.get_by_id(context, attachment_id)
         instance_uuid = attachment.instance_uuid
-        instance_host = attachment.instance_host
         try:
             csd_instance_id = self._get_csd_instance_id(instance_uuid)
             csd_volume_id = self._get_csd_sgs_volume_id(volume_id)
             csd_sgs_client = self._get_cascaded_sgs_client(context)
             csd_sgs_client.volumes.attach(csd_volume_id, csd_instance_id,
-                                          instance_host)
+                                          volume['access_mode'])
             self.sync_volumes[volume_id] = {'action': 'attach',
                                             'attachment': attachment}
         except Exception:

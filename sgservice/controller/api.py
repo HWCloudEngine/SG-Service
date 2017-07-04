@@ -18,6 +18,7 @@ import six
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
+from oslo_utils import importutils
 from oslo_utils import timeutils
 import webob.exc
 
@@ -36,6 +37,14 @@ from sgservice import utils
 CONF = cfg.CONF
 
 LOG = logging.getLogger(__name__)
+
+controller_api_opts = [
+    cfg.BoolOpt('use_caa',
+                default=False,
+                help='use caa to get instance host')
+]
+
+CONF.register_opts(controller_api_opts)
 
 
 class API(base.Base):
@@ -283,7 +292,7 @@ class API(base.Base):
         LOG.info(_LI("Get all volumes completed successfully."))
         return volumes
 
-    def attach(self, context, volume, instance_uuid, instance_host, mode):
+    def attach(self, context, volume, instance_uuid, mode):
         attachments = objects.VolumeAttachmentList.get_all_by_instance_uuid(
             context, volume.id, instance_uuid)
         if len(attachments) == 1:
@@ -316,6 +325,22 @@ class API(base.Base):
                       "zones")
             LOG.error(msg)
             raise exception.InvalidInstance(reason=msg)
+
+        instance_host = None
+        if CONF.use_caa:
+            import_str = 'sgservice.common.clients.caa'
+            caa_module = importutils.import_module(import_str)
+            caa_client = caa_module.get_admin_client()
+            hyperagent_infos = caa_client.hyperaget_info.list()
+            for info in hyperagent_infos:
+                if info.id == instance_uuid:
+                    instance_host = info.hyperagentInfo
+                    break
+        else:
+            for key, value in instance.addresses.items():
+                if key == 'external_api':
+                    instance_host = value[0]['addr']
+
         instance_name = instance.name
         if "server@" in instance_name:
             logical_instance_id = instance_name.split('@')[1]

@@ -285,12 +285,11 @@ class VolumesController(wsgi.Controller):
         params = body['attach']
         params = {} if params is None else params
         instance_uuid = params.get('instance_uuid', None)
-        instance_ip = params.get('instance_ip', None)
 
         mode = params.get('mode', None)
         if mode is None:
             mode = 'rw'
-        if instance_uuid is None or instance_ip is None:
+        if instance_uuid is None:
             msg = _("Invalid request to attach volume to an invalid target")
             raise webob.exc.HTTPBadRequest(explanation=msg)
         if mode not in ('rw', 'ro'):
@@ -299,7 +298,7 @@ class VolumesController(wsgi.Controller):
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
         attach_result = self.service_api.attach(context, volume, instance_uuid,
-                                                instance_ip, mode)
+                                                mode)
         return self._view_builder.attach_summary(req, attach_result)
 
     @wsgi.action('detach')

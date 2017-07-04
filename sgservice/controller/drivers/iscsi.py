@@ -193,15 +193,16 @@ class ISCSIDriver(SGDriver):
             msg = (_LE('initialize connection failed, err_no:%s'), res.status)
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
-        target_portal = "%s:3260" % sg_client.host
-        target_iqn = res.connection_info['target_iqn']
-        target_lun = int(res.connection_info['target_lun'])
-        connection_info = {
-            'target_portal': target_portal,
-            'target_iqn': target_iqn,
-            'target_lun': target_lun,
-        }
-        return connection_info
+        if mode == common_pb2.ISCSI_MODE:
+            target_portal = "%s:3260" % sg_client.host
+            target_iqn = res.connection_info['target_iqn']
+            target_lun = int(res.connection_info['target_lun'])
+            connection_info = {
+                'target_portal': target_portal,
+                'target_iqn': target_iqn,
+                'target_lun': target_lun,
+            }
+            return connection_info
 
     def terminate_connection(self, sg_client, volume, mode, device=None):
         mode = CLIENT_MODE_MAPPING.get(mode, common_pb2.ISCSI_MODE)
