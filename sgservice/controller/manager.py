@@ -628,7 +628,7 @@ class ControllerManager(manager.Manager):
                 cinder_client = self._create_cinder_client(context)
                 cinder_volume = self._wait_cinder_volume_status(
                     cinder_client, volume_id, 'available')
-                if cinder_volume != 'available':
+                if cinder_volume.status != 'available':
                     raise Exception(_LE("detach volume from sg failed"))
             except Exception as err:
                 LOG.error(err)

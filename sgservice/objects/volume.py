@@ -92,7 +92,7 @@ class Volume(base.SGServicePersistentObject, base.SGServiceObject,
 
     @property
     def name(self):
-        return CONF.volume_name_template % self.name_id
+        return CONF.volume_name_template % self.id
 
     @property
     def volume_metadata(self):

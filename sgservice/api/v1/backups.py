@@ -54,6 +54,7 @@ class BackupViewBuilder(common.ViewBuilder):
                 'name': backup.get('display_name'),
                 'description': backup.get('display_description'),
                 'status': backup.get('status'),
+                'size': backup.get('size'),
                 'availability_zone': backup.get('availability_zone'),
                 'replication_zone': backup.get('replication_zone'),
                 'type': backup.get('type'),
