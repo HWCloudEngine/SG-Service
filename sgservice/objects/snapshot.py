@@ -58,7 +58,10 @@ class Snapshot(base.SGServicePersistentObject, base.SGServiceObject,
 
     @property
     def name(self):
-        return CONF.snapshot_name_template % self.id
+        if self.display_name:
+            return self.display_name
+        else:
+            return CONF.snapshot_name_template % self.id
 
     @property
     def volume_name(self):

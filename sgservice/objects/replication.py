@@ -48,7 +48,10 @@ class Replication(base.SGServicePersistentObject, base.SGServiceObject,
 
     @property
     def name(self):
-        return CONF.replication_name_template % self.id
+        if self.display_name:
+            return self.display_name
+        else:
+            return CONF.replication_name_template % self.id
 
     @classmethod
     def _from_db_object(cls, context, replication, db_replication):

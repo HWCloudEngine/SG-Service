@@ -53,7 +53,10 @@ class Checkpoint(base.SGServicePersistentObject, base.SGServiceObject,
 
     @property
     def name(self):
-        return CONF.checkpoint_name_template % self.id
+        if self.display_name:
+            return self.display_name
+        else:
+            return CONF.checkpoint_name_template % self.id
 
     @classmethod
     def _from_db_object(cls, context, checkpoint, db_checkpoint,

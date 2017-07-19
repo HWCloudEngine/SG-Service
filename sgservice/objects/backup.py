@@ -59,7 +59,10 @@ class Backup(base.SGServicePersistentObject, base.SGServiceObject,
 
     @property
     def name(self):
-        return CONF.backup_name_template % self.id
+        if self.display_name:
+            return self.display_name
+        else:
+            return CONF.backup_name_template % self.id
 
     @property
     def has_dependent_backups(self):
