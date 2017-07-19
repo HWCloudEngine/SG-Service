@@ -524,7 +524,7 @@ class SGServiceProxy(manager.Manager):
         return 'volume@%s' % csg_volume_id
 
     @retrying.retry(stop_max_attempt_number=10,
-                    wait_fixed=CONF.sync_status_interval)
+                    wait_fixed=CONF.sync_status_interval*1000)
     def _get_csd_cinder_volume_id(self, volume_id):
         # get csd_volume_id from cache mapping as first
         if volume_id in self.volumes_mapping_cache.keys():
