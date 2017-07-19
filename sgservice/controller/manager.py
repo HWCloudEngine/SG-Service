@@ -1673,7 +1673,7 @@ class ControllerManager(manager.Manager):
         volume.save()
         self._do_create_volume(context, snapshot, volume)
 
-    @retry(wait_fixed=CONF.sync_status_interval)
+    @retry(wait_fixed=CONF.sync_status_interval * 1000)
     def _wait_cinder_volume_status(self, cinder_client, volume_id, status):
         cinder_volume = cinder_client.volumes.get(volume_id)
         if 'error' not in cinder_volume.status:
@@ -1682,7 +1682,7 @@ class ControllerManager(manager.Manager):
                 raise Exception("Volume status is not %s" % status)
         return cinder_volume
 
-    @retry(wait_fixed=CONF.sync_status_interval)
+    @retry(wait_fixed=CONF.sync_status_interval * 1000)
     def _wait_vols_from_snap(self, volume):
         sg_client = SGClientObject(volume.sg_client)
         driver_volume = self.driver.query_volume_from_snapshot(sg_client,
