@@ -420,6 +420,13 @@ class ControllerManager(manager.Manager):
                 except Exception:
                     volume = None
                 if backup.status == fields.BackupStatus.RESTORING:
+                    try:
+                        volume = objects.Volume.get_by_id(
+                            context, backup['restore_volume_id'])
+                    except Exception:
+                        backup.update(
+                            {'status': fields.BackupStatus.AVAILABLE})
+                        backup.save()
                     self._init_restoring_volume(context, volume, backup)
                 else:
                     self.sync_backups[backup.id] = {
