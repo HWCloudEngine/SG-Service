@@ -307,8 +307,10 @@ class API(base.Base):
             raise exception.InvalidVolumeAttachMode(mode=mode,
                                                     volume_id=volume.id)
 
-        if volume['status'] != fields.VolumeStatus.ENABLED:
-            msg = _LE('volume to be attach must be enabled')
+        if (volume['status'] != fields.VolumeStatus.ENABLED
+                and 'ing' in volume['replicate_status']):
+            msg = _LE('volume to be attach must be enabled, '
+                      'and can not doing any replicate action.')
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
 
@@ -371,6 +373,13 @@ class API(base.Base):
                    {"volume_id": volume.id, "instance_id": instance_uuid})
             LOG.info(msg)
             return
+
+        if (volume['status'] != fields.VolumeStatus.IN_USE
+                and 'ing' in volume['replicate_status']):
+            msg = _LE('volume to be attach must be in-use, '
+                      'and can not doing any replicate action.')
+            LOG.error(msg)
+            raise exception.InvalidVolume(reason=msg)
 
         volume.update({'status': fields.VolumeStatus.DETACHING})
         volume.save()
@@ -906,6 +915,22 @@ class API(base.Base):
                     'error, or failed_over')
             raise exception.InvalidReplication(reason=msg)
 
+        master_volume_id = replication['master_volume']
+        slave_volume_id = replication['slave_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled or '
+                     'but current status is "%s".'),
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
         checkpoints = objects.CheckpointList.get_all_by_replication(
             context, replication.id)
         if len(checkpoints) != 0:
@@ -915,10 +940,7 @@ class API(base.Base):
         replication.update({'status': fields.ReplicationStatus.DELETING,
                             'force': False})
         replication.save()
-        master_volume_id = replication['master_volume']
-        slave_volume_id = replication['slave_volume']
-        master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+
         try:
             self.delete_replicate(context, slave_volume)
             self.delete_replicate(context, master_volume)
@@ -970,13 +992,25 @@ class API(base.Base):
                     'failed-over')
             raise exception.InvalidReplication(reason=msg)
 
+        master_volume_id = replication['master_volume']
+        slave_volume_id = replication['slave_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled or '
+                     'but current status is "%s".'),
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
         replication.update({'status': fields.ReplicationStatus.ENABLING,
                             'force': False})
         replication.save()
-        master_volume_id = replication['master_volume']
-        master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['slave_volume']
-        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
             self.enable_replicate(context, master_volume)
@@ -994,13 +1028,25 @@ class API(base.Base):
                     'failed-over')
             raise exception.InvalidReplication(reason=msg)
 
+        master_volume_id = replication['master_volume']
+        slave_volume_id = replication['slave_volume']
+        master_volume = objects.Volume.get_by_id(context, master_volume_id)
+        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled or '
+                     'but current status is "%s".'),
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
         replication.update({'status': fields.ReplicationStatus.DISABLING,
                             'force': False})
         replication.save()
-        master_volume_id = replication['master_volume']
-        master_volume = objects.Volume.get_by_id(context, master_volume_id)
-        slave_volume_id = replication['slave_volume']
-        slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
 
         try:
             self.disable_replicate(context, master_volume)
@@ -1017,14 +1063,25 @@ class API(base.Base):
             msg = _('Replication to be failed-over must be enabled')
             raise exception.InvalidReplication(reason=msg)
 
-        replication.update({'status': fields.ReplicationStatus.FAILING_OVER,
-                            'force': force})
-        replication.save()
-
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
         slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled or '
+                     'but current status is "%s".'),
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        replication.update({'status': fields.ReplicationStatus.FAILING_OVER,
+                            'force': force})
+        replication.save()
 
         master_host = master_volume['host']
         try:
@@ -1082,14 +1139,25 @@ class API(base.Base):
             msg = _('Replication to be reversed must be failed-over')
             raise exception.InvalidReplication(reason=msg)
 
-        replication.update({'status': fields.ReplicationStatus.REVERSING,
-                            'force': False})
-        replication.save()
-
         master_volume_id = replication['master_volume']
         master_volume = objects.Volume.get_by_id(context, master_volume_id)
         slave_volume_id = replication['slave_volume']
         slave_volume = objects.Volume.get_by_id(context, slave_volume_id)
+        if master_volume['status'] not in [fields.VolumeStatus.ENABLED,
+                                           fields.VolumeStatus.IN_USE]:
+            msg = (_('Master volume of a replication should be enabled or '
+                     'in-use, but current status is "%s".'),
+                   master_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+        if slave_volume['status'] not in [fields.VolumeStatus.ENABLED]:
+            msg = (_('Slave volume of a replication should be enabled or '
+                     'but current status is "%s".'),
+                   slave_volume['status'])
+            raise exception.InvalidVolume(reason=msg)
+
+        replication.update({'status': fields.ReplicationStatus.REVERSING,
+                            'force': False})
+        replication.save()
 
         try:
             self.reverse_replicate(context, master_volume)
