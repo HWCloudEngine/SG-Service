@@ -306,3 +306,7 @@ class VolumeMetadataNotFound(NotFound):
 
 class CascadedResourceNotFound(NotFound):
     message = _("Cascaded resource not found: %(reason)s")
+
+
+class ErrorStatus(InnerServiceError):
+    message = _("Error status: %(reason)s")

@@ -219,9 +219,10 @@ class ISCSIDriver(SGDriver):
             LOG.error(msg)
             raise exception.SGDriverError(reason=msg)
 
-    def attach_volume(self, sg_client, volume, device):
+    def attach_volume(self, sg_client, volume, device, host):
         try:
-            res = self.volume_ctrl(sg_client).AttachVolume(volume.id, device)
+            res = self.volume_ctrl(sg_client).AttachVolume(
+                volume.id, device, host)
         except Exception as exc:
             msg = (_LE('attach volume failed, err:%s'), exc)
             LOG.error(msg)

@@ -545,10 +545,11 @@ class SGServiceProxy(manager.Manager):
                        volume_id)
                 LOG.info(msg)
                 raise exception.CascadedResourceNotFound(reason=msg)
-        except Exception as err:
-            LOG.info(_LE("get cascaded cinder volume-id of %s err"),
-                     volume_id)
-            raise err
+        except Exception:
+            msg = (_LE("get cascaded cinder volume-id of %s failed"),
+                   volume_id)
+            LOG.info(msg)
+            raise exception.CascadedResourceNotFound(reason=msg)
 
     def _get_csd_sgs_volume_id(self, volume_id):
         # get csd_volume_id from cache mapping as first

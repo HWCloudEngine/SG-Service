@@ -790,7 +790,8 @@ class ControllerManager(manager.Manager):
             device = self._attach_volume_to_sg(context, logical_volume_id,
                                                sg_client)
             # step 4: call attach volume request to sg-client
-            self.driver.attach_volume(sg_client, volume, device)
+            self.driver.attach_volume(sg_client, volume, device,
+                                      attachment.instance_host)
             driver_data = {'driver_type': constants.AGENT_MODE}
             volume.update({'driver_data': jsonutils.dumps(driver_data)})
             volume.save()
@@ -1680,21 +1681,25 @@ class ControllerManager(manager.Manager):
         volume.save()
         self._do_create_volume(context, snapshot, volume)
 
-    @retry(wait_fixed=CONF.sync_status_interval * 1000)
+    @retry(wait_fixed=CONF.sync_status_interval * 1000,
+           retry_on_exception=exception.ErrorStatus)
     def _wait_cinder_volume_status(self, cinder_client, volume_id, status):
         cinder_volume = cinder_client.volumes.get(volume_id)
         if 'error' not in cinder_volume.status:
             if cinder_volume.status != status:
-                LOG.info(_LI("Volume status is %s"), cinder_volume.status)
-                raise Exception("Volume status is not %s" % status)
+                reason = (_LI("Volume status is %s"), cinder_volume.status)
+                LOG.info(reason)
+                raise exception.ErrorStatus(reason=reason)
         return cinder_volume
 
-    @retry(wait_fixed=CONF.sync_status_interval * 1000)
+    @retry(wait_fixed=CONF.sync_status_interval * 1000,
+           retry_on_exception=exception.ErrorStatus)
     def _wait_vols_from_snap(self, volume):
         sg_client = SGClientObject(volume.sg_client)
         driver_volume = self.driver.query_volume_from_snapshot(sg_client,
                                                                volume.id)
         if driver_volume['status'] != fields.VolumeStatus.ENABLED:
-            LOG.info(_LI("Volume status is %s"), driver_volume['status'])
-            raise Exception("Volume is creating")
+            reason = (_LI("Volume status is %s"), driver_volume['status'])
+            LOG.info(reason)
+            raise exception.ErrorStatus(reason=reason)
         return driver_volume
