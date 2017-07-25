@@ -314,6 +314,14 @@ class API(base.Base):
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
 
+        snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
+        for snapshot in snapshots:
+            if 'ing' in snapshot.status:
+                msg = _LE('volume to be attach can not '
+                          'doing any snapshot action.')
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
+
         nova_client = nova.get_project_context_client(context)
         instance = nova_client.servers.get(instance_uuid)
         if instance.status != 'ACTIVE':
@@ -380,6 +388,14 @@ class API(base.Base):
                       'and can not doing any replicate action.')
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
+
+        snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
+        for snapshot in snapshots:
+            if 'ing' in snapshot.status:
+                msg = _LE('volume to be detach can not '
+                          'doing any snapshot action.')
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
 
         volume.update({'status': fields.VolumeStatus.DETACHING})
         volume.save()

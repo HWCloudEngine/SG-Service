@@ -790,7 +790,8 @@ class ControllerManager(manager.Manager):
             device = self._attach_volume_to_sg(context, logical_volume_id,
                                                sg_client)
             # step 4: call attach volume request to sg-client
-            self.driver.attach_volume(sg_client, volume, device)
+            self.driver.attach_volume(sg_client, volume, device,
+                                      attachment.instance_host)
             driver_data = {'driver_type': constants.AGENT_MODE}
             volume.update({'driver_data': jsonutils.dumps(driver_data)})
             volume.save()
