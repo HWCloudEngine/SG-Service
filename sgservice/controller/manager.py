@@ -1582,6 +1582,8 @@ class ControllerManager(manager.Manager):
             }
             if snapshot_id:
                 snapshot = objects.Snapshot.get_by_id(context, snapshot_id)
+                snapshot.update({'sg_client': volume.sg_client})
+                snapshot.save()
                 self.sync_snapshots[snapshot_id] = {
                     'action': 'create',
                     'snapshot': snapshot
