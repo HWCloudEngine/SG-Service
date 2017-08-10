@@ -1249,12 +1249,10 @@ class ControllerManager(manager.Manager):
         backup = objects.Backup.get_by_id(context, backup_id)
         backup_type = backup_record.get('backup_type', constants.FULL_BACKUP)
         driver_data = jsonutils.dumps(backup_record.get('driver_data'))
-        size = backup_record.get('backup_size', 1)
         sg_client = SGClientObject()
         backup.update({'type': backup_type,
                        'driver_data': driver_data,
                        'status': fields.BackupStatus.AVAILABLE,
-                       'size': size,
                        'sg_client': sg_client.dumps()})
         backup.save()
 

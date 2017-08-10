@@ -51,6 +51,7 @@ class CheckpointViewBuilder(common.ViewBuilder):
             'checkpoint': {
                 'id': checkpoint.get('id'),
                 'user_id': checkpoint.get('user_id'),
+                'project_id': checkpoint.get('project_id'),
                 'status': checkpoint.get('status'),
                 'name': checkpoint.get('display_name'),
                 'description': checkpoint.get('display_description'),

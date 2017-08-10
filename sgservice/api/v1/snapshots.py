@@ -61,6 +61,7 @@ class SnapshotViewBuilder(common.ViewBuilder):
             'snapshot': {
                 'id': snapshot.id,
                 'user_id': snapshot.user_id,
+                'project_id': snapshot.project_id,
                 'name': snapshot.display_name,
                 'description': snapshot.display_description,
                 'volume_id': snapshot.volume_id,

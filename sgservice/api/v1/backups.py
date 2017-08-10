@@ -51,6 +51,7 @@ class BackupViewBuilder(common.ViewBuilder):
             'backup': {
                 'id': backup.get('id'),
                 'user_id': backup.get('user_id'),
+                'project_id': backup.get('project_id'),
                 'name': backup.get('display_name'),
                 'description': backup.get('display_description'),
                 'status': backup.get('status'),

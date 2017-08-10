@@ -68,6 +68,8 @@ class VolumeViewBuilder(common.ViewBuilder):
         volume_ref = {
             'volume': {
                 'id': volume.get('id'),
+                'user_id': volume.get('user_id'),
+                'project_id': volume.get('project_id'),
                 'status': volume.get('status'),
                 'name': volume.get('display_name'),
                 'description': volume.get('display_description'),

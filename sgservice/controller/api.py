@@ -617,6 +617,7 @@ class API(base.Base):
             'availability_zone': backup_record['availability_zone'],
             'status': fields.BackupStatus.CREATING,
             'destination': constants.LOCAL_BACKUP,
+            'size': backup_record.get('backup_size', 1)
         }
         backup = objects.Backup(context, **kwargs)
         backup.create()

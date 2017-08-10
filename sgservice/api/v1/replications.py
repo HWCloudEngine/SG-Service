@@ -51,6 +51,7 @@ class ReplicationViewBuilder(common.ViewBuilder):
             'replication': {
                 'id': replication.get('id'),
                 'user_id': replication.get('user_id'),
+                'project_id': replication.get('project_id'),
                 'status': replication.get('status'),
                 'master_volume': replication.get('master_volume'),
                 'slave_volume': replication.get('slave_volume'),
