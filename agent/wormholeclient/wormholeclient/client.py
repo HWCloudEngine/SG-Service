@@ -11,7 +11,8 @@ from .utils import utils
 
 
 class Client(requests.Session, api.VersionApiMixin, api.ContainerApiMixin,
-             api.VolumeApiMixin, api.TaskApiMixin, api.PersonalityApiMixin):
+             api.VolumeApiMixin, api.TaskApiMixin, api.PersonalityApiMixin,
+             api.SGAgentApiMixin):
     def __init__(self, host_ip, port=7127, scheme="http", version=None,
                  timeout=constants.DEFAULT_TIMEOUT_SECONDS,
                  proxies={"http": None, "https": None}):
