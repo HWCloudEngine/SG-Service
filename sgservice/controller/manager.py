@@ -798,6 +798,18 @@ class ControllerManager(manager.Manager):
                                        host=instance_host)
             volume.update({'sg_client': sg_client.dumps()})
             volume.save()
+
+            # step 4.0: get sg-client status in guest vm, and config
+            sg_agent = AgentClient(instance_host, CONF.sgs_agent_port)
+            result = sg_agent.get_sg_client_status(
+                {'meta_server_ip': CONF.sg_client.sg_client_host})
+            if result['status'].lower() != 'yes':
+                result = sg_agent.config_sg_client(
+                    {'meta_server_ip': CONF.sg_client.sg_client_host})
+                if result['result'].lower() != 'yes':
+                    LOG.error("config guest vm sg-client failed")
+                    raise
+
             device = self._attach_volume_to_sg(context, logical_volume_id,
                                                sg_client)
             # step 4: call attach volume request to sg-client
