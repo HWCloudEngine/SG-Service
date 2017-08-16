@@ -54,10 +54,10 @@ class SGAgentController(wsgi.Application):
     # used for get sgclient status information
     def get_sg_client_status(self, request, sgclient_properties):
         target_ip = sgclient_properties["meta_server_ip"]
-        config_file_url = "/etc/storage-gateway/config.ini"
+        config_file = "/etc/storage-gateway/config.ini"
         try:
             config_info = ConfigParser.ConfigParser()
-            config_info.read(config_file_url)
+            config_info.read(config_file)
             meta_server_ip = config_info.get("network", "meta_server_ip")
 
             # check meta_server_ip exsiting or not

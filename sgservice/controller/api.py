@@ -307,12 +307,17 @@ class API(base.Base):
             raise exception.InvalidVolumeAttachMode(mode=mode,
                                                     volume_id=volume.id)
 
-        if (volume['status'] != fields.VolumeStatus.ENABLED
-                and 'ing' in volume['replicate_status']):
-            msg = _LE('volume to be attach must be enabled, '
-                      'and can not doing any replicate action.')
+        if volume['status'] != fields.VolumeStatus.ENABLED:
+            msg = _LE('volume to be attach must be enabled.')
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
+
+        if volume['replicate_status']:
+            if 'ing' in volume['replicate_status']:
+                msg = _LE('volume to be attach '
+                          'can not doing any replicate action.')
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
 
         snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
         for snapshot in snapshots:
@@ -382,12 +387,17 @@ class API(base.Base):
             LOG.info(msg)
             return
 
-        if (volume['status'] != fields.VolumeStatus.IN_USE
-                and 'ing' in volume['replicate_status']):
-            msg = _LE('volume to be attach must be in-use, '
-                      'and can not doing any replicate action.')
+        if volume['status'] != fields.VolumeStatus.IN_USE:
+            msg = _LE('volume to be detach must be in-use.')
             LOG.error(msg)
             raise exception.InvalidVolume(reason=msg)
+
+        if volume['replicate_status']:
+            if 'ing' in volume['replicate_status']:
+                msg = _LE('volume to be detach '
+                          'can not doing any replicate action.')
+                LOG.error(msg)
+                raise exception.InvalidVolume(reason=msg)
 
         snapshots = objects.SnapshotList.get_all_by_volume(context, volume.id)
         for snapshot in snapshots:
